@@ -7,6 +7,8 @@
 ## Arbeitsprinzip für dich, Claude Code (WICHTIGSTE REGEL)
 Nicht "schreib mir das Projekt". Stattdessen: **kleinste lauffähige Einheit, jede Zeile erklärt, bevor du sie schreibst.** Generiere niemals ganze Skripte auf einmal. Der Gründer muss jede Zeile verstehen — er soll später einen CTO führen und einem Investor antworten können. Frage nach, statt anzunehmen.
 
+**Geschäftlich schonungslos ehrlich sein.** Nicht beschönigen, keine Wettbewerbsvorteile/Alleinstellungsmerkmale behaupten, die nicht sauber belegt sind, keine Cheerleading-Antworten auf strategische Fragen. Wenn eine Einschätzung zu optimistisch war, das aktiv selbst korrigieren, sobald es auffällt — auch unaufgefordert, auch wenn's unbequem ist. Der Gründer trifft Entscheidungen mit echtem Geld und echter Zeit; er braucht eine kalibrierte Einschätzung, keine Bestätigung. (Grund: Am 18.07.2026 hat Claude eine Formulierung zu großzügig ausgelegt — "das hast du heute als Erster gebaut" impliziert, obwohl die Technik selbst bei METR & Co. längst Praxis ist. Der Gründer hat das selbst bemerkt und nachgefragt. Nicht wieder passieren lassen.)
+
 ## 1. Vision in einem Satz
 Die unabhängige, nachrechenbare Prüf- und Beglaubigungsinstanz für Coding-Agenten — ein manipulationssicheres Track-Record-System, das zeigt, welchem Agenten man Code, Zugriff und Geld anvertrauen kann. Analogie: TÜV / SGS / Underwriters Laboratories für KI-Agenten. **Nicht** noch ein Leaderboard.
 
@@ -54,7 +56,11 @@ MacBook Air: zum Bauen ja (Phase 0/0.5/1 reine Orchestrierung + API-Calls), zum 
 ## 9. Roadmap
 Sprachverteilung: ~80% Python, ~15% TypeScript, ~5% Rust (Rust erst ab Monat 9). Eiserne Regel: jede Phase muss ohne die nächste nützlich sein. Krypto zuletzt.
 
-- **⭐ Phase 0 — Determinismus beweisen (Woche 1–3) ← HIER FANGEN WIR AN.** Ein Skript, ~150 Zeilen Python. 5 bekannte Aufgaben, Container bauen, Gold-Patch anwenden, Tests 10× ausführen, vergleichen. Kein Agent, kein LLM, keine Chain. **Erfolgskriterium: 10/10 identisch bei allen 5 Aufgaben.** Kosten ~0 €. Scheitert das, ist das Konzept tot — besser jetzt wissen. **Detaillierter Plan: `phase0.md`** (Aufgabenquelle, Umgebungs-Pins, Schritt-Abfolge, Definition of Done — bei Arbeit an Phase 0 immer zuerst lesen).
+- **⭐ Phase 0 — Determinismus beweisen (Woche 1–3) — ERLEDIGT (18.07.2026).** Ein Skript, ~150 Zeilen Python. 5 bekannte Aufgaben, Container bauen, Gold-Patch anwenden, Tests 10× ausführen, vergleichen. Kein Agent, kein LLM, keine Chain. **Erfolgskriterium: 10/10 identisch bei allen 5 Aufgaben.** Kosten ~0 €. **Detaillierter Plan: `phase0.md`**. Ergebnis + Code: `github.com/louisklaff-cell/Truvent` (privat).
+- **🔦 Lackmustests (vor Phase 0.5/1 vorgeschaltet, ~30–100€, wenige Wochen) ← HIER STEHEN WIR JETZT.** Zwei billige Vorab-Checks, ob sich der große Aufwand von Phase 0.5/1 überhaupt lohnt — Ergebnis aus einer Wettbewerbs-/Nachfragerecherche vom 18.07.2026 (Details in Claude-Memory "truvent-competitive-landscape"):
+  1. **QS-Gauntlet gegen bestehende Tasks** — Mutationstest + Flakiness-Screen + Leak-Scan auf schon existierenden SWE-bench-Aufgaben anwenden. Testfrage: Findet unser QS-Handwerk nachweisbar mehr kaputte Aufgaben, als ein grobes Konkurrenz-Skript finden würde? Ist eher ein Urteilsaufruf als ein sauberes Experiment — kein 10/10-artiges Ergebnis zu erwarten.
+  2. **Zahlender Design-Partner** — aus 10 echten PRs eines einzelnen Kunden deterministische Eval-Tasks bauen, ab dem ersten Kunden Geld verlangen (Pilot). Testfrage: Wie lange dauert das Onboarding pro Kunde (kurz = leicht kopierbares Feature, lang = echter Burggraben), und zahlt überhaupt jemand?
+  Beide Tests ersetzen Phase 0.5/1 nicht, sondern gehen ihnen als schlanke Vorabprüfung voraus — bestehen sie, wird mit mehr Vertrauen in Phase 0.5/1 investiert; fallen sie durch, eher Andocken an bestehende Anbieter statt eigene Firma.
 - **Phase 0.5 — Ersten Agenten dranhängen (Woche 3–5).** Echter Coding-Agent über API, dieselben 5 Aufgaben, 3 Läufe, Varianz messen. ~50–200 €. Nebeneffekt: erster Blogpost.
 - **Phase 1 — Task-Pipeline + QS (Monat 2–4) — der Burggraben.** Harvester, Environment-Builder (Docker, Deps gepinnt), Leak-Scanner, Mutation-Tester, Flakiness-Screen. Output: ~100 saubere Tasks in SQLite.
 - **Phase 2 — Scoring (Monat 4–5).** py-irt / pymc / numpyro. IRT-Modell, Kosten-Tracking, Item-Health. Output: Scores mit Konfidenzintervallen.
@@ -71,7 +77,9 @@ Gelernt dabei (relevant für Phase 1, den Harvester):
 - Ein offizielles SWE-bench-Image hatte eine fehlende Abhängigkeit (`pylint-dev__pylint-4661`, `appdirs`) -- musste einmalig mit Netzzugriff gefixt und als eigenes Image commited werden. Zeigt: auch "verifizierte" Referenz-Images können environment-seitig lückenhaft sein, eigener Leak-/Health-Scan in Phase 1 bleibt nötig.
 - sympy nennt in FAIL_TO_PASS/PASS_TO_PASS nur nackte Testnamen ohne Dateibezug -- Datei wurde aus dem Diff-Header von `test_patch` abgeleitet.
 
-Nächster Schritt: Phase 0.5 (ersten echten Coding-Agenten über API auf dieselben 5 Aufgaben ansetzen, Varianz messen).
+Zwischenzeitlich: Wettbewerbs-/Nachfragerecherche durchgeführt (18.07.2026, Details in Claude-Memory "truvent-competitive-landscape"). Kernbefund: Nachfrage real und belegt, aber Krypto-/On-Chain-Schicht hat kein Nachfragesignal und ist nachbaubar — der eigentliche Burggraben liegt in der QS-Gauntlet-Tiefe + kundenspezifischem Task-Manufacturing, nicht in der Chain. Naher Wettbewerber: AIUC (TÜV+Versicherung für KI-Agenten, aber nicht Coding-spezifisch, nicht deterministik-getrieben).
+
+Nächster Schritt: die zwei Lackmustests aus Abschnitt 9 (QS-Gauntlet gegen bestehende Tasks + ein zahlender Design-Partner) — erst danach Entscheidung, ob/wie Phase 0.5 angegangen wird.
 
 Offene Fragen:
 - [x] Python + Docker auf dem MacBook prüfen -- erledigt in Phase 0: Docker mit `--platform linux/amd64`-Emulation lief stabil und deterministisch (10/10) über alle 5 Aufgaben, kein Nichtdeterminismus durch Emulation beobachtet
