@@ -40,6 +40,29 @@ def _pytest_parse(output):
     return {nodeid: PYTEST_STATUS_MAP[status] for nodeid, status in PYTEST_RESULT_LINE.findall(output)}
 
 
+# sympy: "test_issue_11617 ok" -- kein Datei-/Klassenbezug im Namen selbst.
+SYMPY_RESULT_LINE = re.compile(r"^(test_\S+)\s+(ok|F|E)\b", re.MULTILINE)
+SYMPY_STATUS_MAP = {"ok": "ok", "F": "FAIL", "E": "ERROR"}
+
+
+def _sympy_labels(meta):
+    # Bare Namen, wie sie auch in FAIL_TO_PASS/PASS_TO_PASS stehen --
+    # welche Datei das ist, wird separat aus test.patch ermittelt.
+    return meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"]
+
+
+def _sympy_parse(output):
+    return {name: SYMPY_STATUS_MAP[s] for name, s in SYMPY_RESULT_LINE.findall(output)}
+
+
+def _test_file_from_patch(task_dir):
+    """sympys FAIL_TO_PASS/PASS_TO_PASS nennen keine Datei -- wir nehmen die
+    Datei, die test.patch selbst aendert (dort werden die Tests definiert)."""
+    text = (task_dir / "test.patch").read_text()
+    match = re.search(r"^diff --git a/(\S+) b/\S+", text, re.MULTILINE)
+    return match.group(1)
+
+
 _APPLY_PATCHES = "cd /testbed && git apply /patches/test.patch && git apply /patches/gold.patch"
 _ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed"
 
@@ -66,6 +89,14 @@ REPO_CONFIGS = {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
         "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
+    },
+    "sympy/sympy": {
+        "labels": _sympy_labels,
+        "parse": _sympy_parse,
+        # --no-subprocess: bin/test startet sonst einen Subprozess, der
+        # Hash-Randomisierung wieder aktivieren kann -- widerspricht unserem
+        # PYTHONHASHSEED=0-Pin.
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && python bin/test --no-subprocess -v {{test_file}}",
     },
 }
 
@@ -103,7 +134,8 @@ def run_once(instance_id):
     config = REPO_CONFIGS[meta["repo"]]
     task_dir = TASKS_DIR / instance_id
     labels = expected_labels(meta)
-    inner_cmd = config["inner_cmd"].format(labels=" ".join(labels))
+    test_file = _test_file_from_patch(task_dir)
+    inner_cmd = config["inner_cmd"].format(labels=" ".join(labels), test_file=test_file)
 
     docker_cmd = [
         "docker", "run", "--rm",
