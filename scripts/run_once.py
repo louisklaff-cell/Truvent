@@ -57,6 +57,19 @@ REPO_CONFIGS = {
         "parse": _pytest_parse,
         "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
     },
+    "pylint-dev/pylint": {
+        "labels": _pytest_labels,
+        "parse": _pytest_parse,
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
+    },
+}
+
+# Instanzen, deren offizielles SWE-bench-Image eine fehlende Abhaengigkeit
+# hatte. Einmalig lokal gefixt (siehe git-Commit-Message) und als eigenes
+# Image commited -- entspricht dem Pin "Image einmal bauen, dann nur laufen
+# lassen" aus phase0.md.
+IMAGE_OVERRIDES = {
+    "pylint-dev__pylint-4661": "truvent/sweb.eval.x86_64.pylint-dev_1776_pylint-4661.fixed:latest",
 }
 
 
@@ -66,6 +79,8 @@ def load_meta(instance_id):
 
 
 def image_name(instance_id):
+    if instance_id in IMAGE_OVERRIDES:
+        return IMAGE_OVERRIDES[instance_id]
     suffix = instance_id.replace("__", "_1776_")
     return f"swebench/sweb.eval.x86_64.{suffix}:latest"
 
