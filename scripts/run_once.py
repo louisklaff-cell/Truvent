@@ -1,4 +1,10 @@
-"""Phase 0, Schritt 2: eine Aufgabe, ein Lauf, Ergebnis parsen."""
+"""Phase 0, Schritt 2/4: eine Aufgabe, ein Lauf, Ergebnis parsen.
+
+Jedes Repo hat seinen eigenen Testrunner und sein eigenes Ausgabeformat.
+REPO_CONFIGS kapselt das pro Repo: wie die Testliste fuer die Kommandozeile
+gebaut wird, welcher Shell-Befehl im Container laeuft, und wie die
+Ausgabe zurueck in {test_id: status} geparst wird.
+"""
 import json
 import re
 import subprocess
@@ -7,19 +13,51 @@ from pathlib import Path
 
 TASKS_DIR = Path(__file__).parent.parent / "tasks"
 
-# Repo-spezifischer Testbefehl. Django nutzt sein eigenes runtests.py,
-# kein pytest -- andere Repos (sympy, pytest, pylint, requests) kommen
-# in Schritt 4 dazu, jeweils mit eigenem Befehl.
-DJANGO_TEST_CMD = (
-    "cd /testbed && "
-    "git apply /patches/test.patch && "
-    "git apply /patches/gold.patch && "
-    "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed && "
-    "python tests/runtests.py --settings=test_sqlite --parallel 1 -v 2 {labels}"
-)
+# Django: "test_count (aggregation.tests.AggregateTestCase) ... ok"
+DJANGO_RESULT_LINE = re.compile(r"^(.+?) \((.+?)\) \.\.\. (ok|FAIL|ERROR)$", re.MULTILINE)
+# pytest -v: "test_requests.py::RequestsTestCase::test_x PASSED [ 16%]"
+PYTEST_RESULT_LINE = re.compile(r"^(\S+::\S+)\s+(PASSED|FAILED|ERROR)\b", re.MULTILINE)
+PYTEST_STATUS_MAP = {"PASSED": "ok", "FAILED": "FAIL", "ERROR": "ERROR"}
 
-# Zeilen wie: "test_count (aggregation.tests.AggregateTestCase) ... ok"
-RESULT_LINE = re.compile(r"^(.+?) \((.+?)\) \.\.\. (ok|FAIL|ERROR)$", re.MULTILINE)
+
+def _django_labels(meta):
+    labels = []
+    for t in meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"]:
+        name, cls = t.rsplit(" (", 1)
+        labels.append(f"{cls.rstrip(')')}.{name}")
+    return labels
+
+
+def _django_parse(output):
+    return {f"{cls}.{name}": status for name, cls, status in DJANGO_RESULT_LINE.findall(output)}
+
+
+def _pytest_labels(meta):
+    return meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"]
+
+
+def _pytest_parse(output):
+    return {nodeid: PYTEST_STATUS_MAP[status] for nodeid, status in PYTEST_RESULT_LINE.findall(output)}
+
+
+_APPLY_PATCHES = "cd /testbed && git apply /patches/test.patch && git apply /patches/gold.patch"
+_ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed"
+
+REPO_CONFIGS = {
+    "django/django": {
+        "labels": _django_labels,
+        "parse": _django_parse,
+        "inner_cmd": (
+            f"{_APPLY_PATCHES} && {_ACTIVATE} && "
+            "python tests/runtests.py --settings=test_sqlite --parallel 1 -v 2 {labels}"
+        ),
+    },
+    "psf/requests": {
+        "labels": _pytest_labels,
+        "parse": _pytest_parse,
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
+    },
+}
 
 
 def load_meta(instance_id):
@@ -27,24 +65,25 @@ def load_meta(instance_id):
         return json.load(f)
 
 
-def to_dotted_labels(test_names):
-    labels = []
-    for t in test_names:
-        name, cls = t.rsplit(" (", 1)
-        labels.append(f"{cls.rstrip(')')}.{name}")
-    return labels
-
-
 def image_name(instance_id):
     suffix = instance_id.replace("__", "_1776_")
     return f"swebench/sweb.eval.x86_64.{suffix}:latest"
 
 
+def expected_labels(meta):
+    return REPO_CONFIGS[meta["repo"]]["labels"](meta)
+
+
+def parse_results(output, meta):
+    return REPO_CONFIGS[meta["repo"]]["parse"](output)
+
+
 def run_once(instance_id):
     meta = load_meta(instance_id)
+    config = REPO_CONFIGS[meta["repo"]]
     task_dir = TASKS_DIR / instance_id
-    labels = to_dotted_labels(meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"])
-    inner_cmd = DJANGO_TEST_CMD.format(labels=" ".join(labels))
+    labels = expected_labels(meta)
+    inner_cmd = config["inner_cmd"].format(labels=" ".join(labels))
 
     docker_cmd = [
         "docker", "run", "--rm",
@@ -65,19 +104,15 @@ def run_once(instance_id):
     return result.stdout + result.stderr, meta
 
 
-def parse_results(output):
-    return {f"{cls}.{name}": status for name, cls, status in RESULT_LINE.findall(output)}
-
-
 def check(instance_id):
     output, meta = run_once(instance_id)
-    expected_labels = to_dotted_labels(meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"])
-    actual = parse_results(output)
+    expected = expected_labels(meta)
+    actual = parse_results(output, meta)
 
-    missing = [l for l in expected_labels if l not in actual]
-    failed = [l for l in expected_labels if actual.get(l) not in (None, "ok")]
+    missing = [l for l in expected if l not in actual]
+    failed = [l for l in expected if actual.get(l) not in (None, "ok")]
 
-    print(f"{instance_id}: {len(actual)} Tests erfasst, {len(expected_labels)} erwartet")
+    print(f"{instance_id}: {len(actual)} Tests erfasst, {len(expected)} erwartet")
     if missing:
         print(f"  FEHLEND (kein Ergebnis geparst): {missing}")
     if failed:

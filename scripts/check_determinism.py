@@ -2,7 +2,7 @@
 import hashlib
 import sys
 
-from run_once import load_meta, parse_results, run_once, to_dotted_labels
+from run_once import expected_labels, load_meta, parse_results, run_once
 
 N_RUNS = 10
 
@@ -17,17 +17,17 @@ def fingerprint(results):
 
 def check_determinism(instance_id, n_runs=N_RUNS):
     meta = load_meta(instance_id)
-    expected_labels = set(to_dotted_labels(meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"]))
+    expected = set(expected_labels(meta))
 
     fingerprints = []
     for i in range(1, n_runs + 1):
         output, _ = run_once(instance_id)
-        results = parse_results(output)
+        results = parse_results(output, meta)
         fp = fingerprint(results)
         fingerprints.append(fp)
 
-        missing = expected_labels - results.keys()
-        failed = {l for l in expected_labels if results.get(l) != "ok"} - missing
+        missing = expected - results.keys()
+        failed = {l for l in expected if results.get(l) != "ok"} - missing
         status = "ok" if not missing and not failed else "ABWEICHUNG"
         print(f"  Lauf {i:2d}/{n_runs}: fingerprint={fp}  {status}")
 
