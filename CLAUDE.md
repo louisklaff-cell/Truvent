@@ -64,10 +64,17 @@ Sprachverteilung: ~80% Python, ~15% TypeScript, ~5% Rust (Rust erst ab Monat 9).
 - **Phase 6 — Token (18+ Monate).** Nur wenn ein echtes Netzwerk existiert.
 
 ## 10. Status & nächste Aktionen (HIER PFLEGEN)
-**Aktueller Stand:** Konzept steht. Kein Code. Kein Kapital eingesetzt. Nächster Schritt: Phase 0 Determinismus-Harness bauen.
+**Aktueller Stand (18.07.2026):** Phase 0 abgeschlossen. Erfolgskriterium erfüllt: 10/10 identisch bei allen 5 Aufgaben (`django__django-10880`, `psf__requests-1142`, `pylint-dev__pylint-4661`, `pytest-dev__pytest-10051`, `sympy__sympy-11618`, aus SWE-bench Verified), reproduzierbar mit einem Befehl (`python scripts/harness.py`). Details, Kandidatenauswahl und Umgebungs-Pins in `phase0.md`. Keine Aufgaben mussten wegen Flakiness aussortiert werden -- alle 5 ursprünglich gewählten Kandidaten bestanden direkt.
+
+Gelernt dabei (relevant für Phase 1, den Harvester):
+- Jedes Repo hat einen eigenen Testrunner und ein eigenes Ausgabeformat (Django: `runtests.py`, sympy: `bin/test`, Rest: `pytest`) -- die Task-Pipeline muss das pro Repo kapseln, nicht einheitlich annehmen.
+- Ein offizielles SWE-bench-Image hatte eine fehlende Abhängigkeit (`pylint-dev__pylint-4661`, `appdirs`) -- musste einmalig mit Netzzugriff gefixt und als eigenes Image commited werden. Zeigt: auch "verifizierte" Referenz-Images können environment-seitig lückenhaft sein, eigener Leak-/Health-Scan in Phase 1 bleibt nötig.
+- sympy nennt in FAIL_TO_PASS/PASS_TO_PASS nur nackte Testnamen ohne Dateibezug -- Datei wurde aus dem Diff-Header von `test_patch` abgeleitet.
+
+Nächster Schritt: Phase 0.5 (ersten echten Coding-Agenten über API auf dieselben 5 Aufgaben ansetzen, Varianz messen).
 
 Offene Fragen:
-- [ ] Python + Docker auf dem MacBook prüfen (macOS-Version, RAM)
+- [x] Python + Docker auf dem MacBook prüfen -- erledigt in Phase 0: Docker mit `--platform linux/amd64`-Emulation lief stabil und deterministisch (10/10) über alle 5 Aufgaben, kein Nichtdeterminismus durch Emulation beobachtet
 - [ ] EU AI Act: Konformitätsbewertungs-Rückenwind? (Fachanwalt)
 - [ ] Lizenzfrage SWE-bench Verified: Datensatz selbst hat kein explizites Lizenz-Tag, enthält Diffs aus Repos mit unterschiedlichen Lizenzen (u.a. GPL-2.0 bei pylint). Für Phase 0 (rein intern, keine Weitergabe) unkritisch. Vor kommerzieller Eval-as-a-Service-Nutzung (Phase 1+) mit Fachanwalt klären — löst sich langfristig ohnehin durch eigenen Harvester (Kontamination, siehe Fehlermodus 1)
 - [ ] Chain final: Solana bestätigen oder Alternativen prüfen
