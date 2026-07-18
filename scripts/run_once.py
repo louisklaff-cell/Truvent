@@ -62,6 +62,11 @@ REPO_CONFIGS = {
         "parse": _pytest_parse,
         "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
     },
+    "pytest-dev/pytest": {
+        "labels": _pytest_labels,
+        "parse": _pytest_parse,
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
+    },
 }
 
 # Instanzen, deren offizielles SWE-bench-Image eine fehlende Abhaengigkeit
