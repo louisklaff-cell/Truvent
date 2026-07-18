@@ -69,6 +69,7 @@ Sprachverteilung: ~80% Python, ~15% TypeScript, ~5% Rust (Rust erst ab Monat 9).
 Offene Fragen:
 - [ ] Python + Docker auf dem MacBook prüfen (macOS-Version, RAM)
 - [ ] EU AI Act: Konformitätsbewertungs-Rückenwind? (Fachanwalt)
+- [ ] Lizenzfrage SWE-bench Verified: Datensatz selbst hat kein explizites Lizenz-Tag, enthält Diffs aus Repos mit unterschiedlichen Lizenzen (u.a. GPL-2.0 bei pylint). Für Phase 0 (rein intern, keine Weitergabe) unkritisch. Vor kommerzieller Eval-as-a-Service-Nutzung (Phase 1+) mit Fachanwalt klären — löst sich langfristig ohnehin durch eigenen Harvester (Kontamination, siehe Fehlermodus 1)
 - [ ] Chain final: Solana bestätigen oder Alternativen prüfen
 - [ ] Erste 5 Test-Aufgaben: aus welcher Quelle?
 - [ ] Erster Kundenkandidat für private Eval-as-a-Service?
