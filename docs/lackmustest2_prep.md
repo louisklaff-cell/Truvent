@@ -37,9 +37,17 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 
 ## 3. Das Pilot-Angebot
 
-**Umfang** (in etwa einer Woche machbar — das Muster ist heute schon bewiesen):
+**Wichtig — Reihenfolge der Formulierung:** Nicht mit dem Aufwand für den Kunden anfangen ("schickt uns eure alten Bugs"), sondern mit dem **Ergebnis, das sie bekommen**. Die alten, gelösten Aufgaben sind nur das Rohmaterial, das wir technisch brauchen — nicht der Wert für sie. Der Wert:
 
-1. 5–10 echte, bereits gelöste Aufgaben aus dem eigenen Repo des Kunden (vergangene PRs/Issues — haben schon einen "Gold Patch": den echten, gemergten Fix)
+1. **Ein Härtetest ihrer eigenen Testsuite, unabhängig von jedem Agenten:** Würden ihre eigenen Tests auch einen plausiblen, aber falschen Fix durchwinken? (Bei unseren 5 öffentlichen Beispielen: 3 von 10.)
+2. **Live-Agenten-Performance auf ihrem eigenen Code**, nicht auf einem generischen Leaderboard, das nichts über ihre Codebasis aussagt (optional, falls gewünscht).
+3. **Ein wiederverwendbares Ergebnis:** 5–10 fertige, deterministische Prüfaufgaben aus ihrem eigenen Repo, die sie später erneut gegen neue Modelle laufen lassen können.
+
+**Der einzige Aufwand auf ihrer Seite:** Lesezugriff auf 5–10 bereits gemergte PRs (alte, gelöste Bugs — die haben schon einen "Gold Patch": den echten, damals gemergten Fix). Das ist die technische Voraussetzung, nicht die Gegenleistung.
+
+**Ablauf** (in etwa einer Woche machbar — das Muster ist heute schon bewiesen):
+
+1. 5–10 echte, bereits gelöste Aufgaben aus dem eigenen Repo des Kunden erhalten
 2. Daraus deterministische Eval-Tasks bauen — exakt das Phase-0-Muster, nur auf ihrem statt einem öffentlichen Repo
 3. QS-Gauntlet drauf (Leak-Scan + Mutationstesting) — zeigt, ob ihre eigene Testsuite dieselben Lücken hat wie die heute gefundenen (requests/pylint/sympy)
 4. Optional: ein echter Coding-Agent läuft gegen ein paar dieser Aufgaben — wie gut löst er *ihren* Code wirklich?
@@ -48,6 +56,8 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 **Preis:** €500–1.500 — echtes Geld (Zahlungssignal-Test bleibt bestehen), aber niedrig genug für eine Entscheidung ohne Freigabeprozess. Ausdrücklich ein **Pilot-Preis**, nicht der spätere reguläre Preis (die €1–3k/Monat-Annahme aus `CLAUDE.md` war für ein laufendes Abo, anderes Produkt).
 
 **Während des Pilots protokollieren:** Zeit pro Aufgabe fürs Onboarding — beantwortet die zweite Lackmustest-Frage direkt.
+
+**Offener Punkt vor dem ersten echten Pilot:** Unser Harness wurde bisher nur gegen saubere, selbst gebaute Patches getestet (Gold Patches, handgebaute Mutanten) — nie gegen echten, möglicherweise unordentlichen Agenten-Output. Ein kleiner interner Testlauf (1 Agent, 1 Aufgabe, ~10–30€) vorher wäre sinnvoll, um grobe Überraschungen selbst zu finden statt beim Kunden.
 
 ## 4. Der Spickzettel
 
@@ -60,8 +70,8 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 **3. Warum das relevant ist:**
 "82% der Firmen hatten laut einer aktuellen Studie in den letzten 6 Monaten einen Produktionsausfall durch KI-generierten Code. Das Problem ist nicht nur 'schreibt der Agent guten Code', sondern 'merkt ihr überhaupt, wenn er es nicht tut'."
 
-**4. Das Angebot:**
-"Ich nehme 5–10 echte, bereits gelöste Aufgaben aus eurem Repo, baue daraus denselben Test, zeige euch, wo eure Testsuite Lücken hat — für €500–1.500, fertig in etwa einer Woche."
+**4. Das Angebot (Ergebnis zuerst, Aufwand danach):**
+"Ich zeige euch, ob eure eigene Testsuite einen fehlerhaften Fix durchwinken würde — und optional, wie gut ein echter Agent auf eurem Code performt. Der einzige Aufwand für euch: Lesezugriff auf 5–10 bereits gemergte PRs. Für €500–1.500, fertig in etwa einer Woche, und am Ende gehören euch die fertigen Prüfaufgaben."
 
 **5. Ehrlich zum Firmenstand:**
 "Wir sind wenige Wochen alt. Ich baue das mit KI-gestützter technischer Unterstützung, aber jeden Schritt verstehe und verantworte ich selbst. Deshalb ist der Pilot-Preis niedrig — ihr wärt einer unserer ersten echten Kunden."
@@ -81,6 +91,7 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 | "Ist das nicht einfach ein besseres KI-Modell nutzen?" | "Nein — das Problem betrifft jedes Modell. Auch der beste Agent kann durch eine zu schwache Testsuite falsch validiert werden." |
 | "Warum kein AI-Code-Reviewer-Tool?" | Siehe Punkt 6 oben — Meinung vs. nachrechenbare Fakten. |
 | "Habt ihr das schon bei einer echten Firma gemacht?" | "Noch nicht — ihr wärt der Erste. Genau deshalb der reduzierte Pilot-Preis." |
+| "Warum sollte ich euch für meine eigenen alten Bugs bezahlen?" | "Ihr bezahlt nicht für die Bugs — die sind nur das Rohmaterial. Ihr bezahlt für das Ergebnis: zu wissen, ob eure Tests einen fehlerhaften Fix erkennen würden, und wie ein Agent auf eurem echten Code performt. Der Lesezugriff auf ein paar alte PRs ist der einzige Aufwand, den wir von euch brauchen." |
 
 ## Referenzmaterial zum Zeigen
 
