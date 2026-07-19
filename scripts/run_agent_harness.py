@@ -1,10 +1,13 @@
-"""Volle Mini-Phase-0.5: alle 5 Aufgaben, 3 Wiederholungen, 2 Modelle.
+"""Volle Mini-Phase-0.5: alle 5 Aufgaben, 3 Wiederholungen, 3 Modelle.
 
-30 echte API-Aufrufe insgesamt. Testet zwei Dinge gleichzeitig:
+45 echte API-Aufrufe insgesamt. Testet drei Dinge gleichzeitig:
 (1) verarbeitet unser Harness echten, unvorhersehbaren KI-Output
     korrekt, statt nur unsere eigenen sauberen Patches?
 (2) wie stark schwankt ein Agent bei mehreren Versuchen derselben
     Aufgabe -- und unterscheidet sich das zwischen den Modellen?
+(3) erkennt unser System auch ECHTE (nicht von uns gebaute) falsche
+    Versuche -- Haiku als schwaecheres Modell soll das wahrscheinlicher
+    machen, ohne dass wir Fehler kuenstlich erzwingen muessen.
 """
 from collections import Counter
 from pathlib import Path
@@ -18,7 +21,7 @@ INSTANCES = [
     "pytest-dev__pytest-10051",
     "sympy__sympy-11618",
 ]
-MODELS = ["claude-sonnet-5", "claude-opus-4-8"]
+MODELS = ["claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5-20251001"]
 RUNS_PER_MODEL = 3
 
 if __name__ == "__main__":
