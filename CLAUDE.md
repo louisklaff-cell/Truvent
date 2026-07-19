@@ -79,7 +79,11 @@ Gelernt dabei (relevant für Phase 1, den Harvester):
 
 Zwischenzeitlich: Wettbewerbs-/Nachfragerecherche durchgeführt (18.07.2026, Details in Claude-Memory "truvent-competitive-landscape"). Kernbefund: Nachfrage real und belegt, aber Krypto-/On-Chain-Schicht hat kein Nachfragesignal und ist nachbaubar — der eigentliche Burggraben liegt in der QS-Gauntlet-Tiefe + kundenspezifischem Task-Manufacturing, nicht in der Chain. Naher Wettbewerber: AIUC (TÜV+Versicherung für KI-Agenten, aber nicht Coding-spezifisch, nicht deterministik-getrieben).
 
-Nächster Schritt: die zwei Lackmustests aus Abschnitt 9 (QS-Gauntlet gegen bestehende Tasks + ein zahlender Design-Partner) — erst danach Entscheidung, ob/wie Phase 0.5 angegangen wird.
+**Lackmustest 1 (QS-Gauntlet gegen bestehende Tasks) — Zwischenergebnis (18.07.2026):** Leak-Scan (Git-Historie + verdächtige Kommentare) und Mutationstesting gegen alle 5 Phase-0-Aufgaben gebaut und ausgeführt (`scripts/leak_scan.py`, `scripts/mutation_test.py`). Kein Git-Historien-Leck bei keiner Aufgabe. Von 10 handgebauten Mutanten (2 pro Aufgabe, je ein leichter + ein schwererer) rutschen **3 komplett durch die volle Testsuite (FALSE_ACCEPT)**: requests-1142 (Content-Length bei DELETE ungetestet), pylint-4661 (Migrationswarnung ungetestet), sympy-11618 (distance()-Fix nur in einer Aufrufrichtung getestet) — bei bewusst plausiblen, "fast richtigen" Fixes. Erster konkreter Beleg, dass unser QS-Handwerk echte Lücken findet, die die reine 10/10-Determinismus-Prüfung aus Phase 0 nicht aufdeckt. Unterwegs zwei eigene Bugs im Test-Harness gefunden und behoben (Label-Format-Mismatch, korrupte handgetippte Patches).
+
+Offen für Lackmustest 1: eigene Einschätzung fehlt noch, ob das "deutlich mehr als ein Wochenend-Skript findet" wäre (siehe Frage in Abschnitt 9) — bräuchte einen Vergleich mit einem bewusst simplen/naiven Referenz-Ansatz, um das zu beurteilen.
+
+Nächster Schritt: Lackmustest 1 ggf. vertiefen (mehr Aufgaben, Vergleich mit naivem Referenzskript) oder zu Lackmustest 2 (zahlender Design-Partner) übergehen — Entscheidung mit Gründer offen.
 
 Offene Fragen:
 - [x] Python + Docker auf dem MacBook prüfen -- erledigt in Phase 0: Docker mit `--platform linux/amd64`-Emulation lief stabil und deterministisch (10/10) über alle 5 Aufgaben, kein Nichtdeterminismus durch Emulation beobachtet
