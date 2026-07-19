@@ -82,11 +82,15 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 **7. Abgrenzung zu anderen Benchmarks (SWE-bench, Scale AI, AIUC, METR):**
 "Wir behaupten nicht, eine geheime Technik zu haben — Determinismus-Prüfung und Mutationstesting sind bekanntes Handwerk. Der Unterschied ist, dass wir das konsequent auf *eurem eigenen* Code anwenden, nicht auf einem öffentlichen Leaderboard, das nichts über eure spezifische Codebasis aussagt."
 
+**8. Warum extern besser als intern (mit Zahlen, Recherche vom 20.07.2026):**
+"Unabhängige Audits haben nachweislich **25% niedrigere Fehlerquoten als interne Selbstprüfung** ([Sensiba](https://sensiba.com/resources/insights/the-7-benefits-of-outsourcing-internal-audit-and-sox-compliance/)). Das ist kein Einzelfall: Der Pentest-Markt wächst 2026 auf $2,7–6,4 Mrd. und weiter mit 8–15% pro Jahr — **obwohl** die Werkzeuge dafür komplett kostenlos sind (Metasploit, OWASP ZAP). Grund: 95% der Firmen haben laut Studien intern Personalengpässe in genau diesem Spezialbereich ([Bright Defense](https://www.brightdefense.com/resources/penetration-testing-statistics/), [Fortune Business Insights](https://www.fortunebusinessinsights.com/penetration-testing-market-108434)). Der Software-Testing-Outsourcing-Markt insgesamt wird bis 2033 auf $129 Mrd. geschätzt, unter anderem wegen eines erwarteten 25%igen Fachkräftemangels bei Quality Engineering ([Coherent Market Insights](https://www.coherentmarketinsights.com/industry-reports/software-testing-and-qa-services-market)). Dasselbe Muster gilt für uns: Die Technik ist nicht geheim — aber sie konsequent, unabhängig und ohne blinden Fleck anzuwenden, macht kaum eine Firma für sich selbst."
+
 **Schwierige Fragen, ehrlich beantwortet:**
 
 | Frage | Antwort |
 |---|---|
 | "Warum soll ich einer neuen Firma vertrauen?" | "Genau deshalb ist der Preis niedrig und alles auf GitHub einsehbar — prüft es selbst, bevor ihr zahlt." |
+| "Warum nicht einfach selbst mit Docker + mutmut prüfen?" | "Könnt ihr — die Werkzeuge sind frei. Aber genau das macht laut Studien kaum jemand konsequent selbst: unabhängige Audits haben 25% niedrigere Fehlerquoten als Selbstprüfung, und der Pentest-Markt wächst trotz kostenloser Tools weiter, weil intern Zeit und Fokus fehlen (siehe Punkt 8)." |
 | "Was macht ihr anders als eure eigene Testsuite laufen zu lassen?" | "Eure Tests sagen nur 'grün oder rot'. Wir prüfen zusätzlich, ob 'grün' überhaupt bedeutet, dass die Lösung wirklich richtig ist." |
 | "Ist das nicht einfach ein besseres KI-Modell nutzen?" | "Nein — das Problem betrifft jedes Modell. Auch der beste Agent kann durch eine zu schwache Testsuite falsch validiert werden." |
 | "Warum kein AI-Code-Reviewer-Tool?" | Siehe Punkt 6 oben — Meinung vs. nachrechenbare Fakten. |
