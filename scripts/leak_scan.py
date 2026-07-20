@@ -12,11 +12,10 @@ Prueft zwei Dinge pro Aufgabe, BEVOR irgendein Patch angewendet wird
    auf die Loesung sein, die schon im Code stehen.
 """
 import re
-import subprocess
 import sys
 from pathlib import Path
 
-from run_once import image_name, load_meta
+from run_once import image_name, load_meta, run_docker_with_cleanup
 
 TASKS_DIR = Path(__file__).parent.parent / "tasks"
 
@@ -36,8 +35,7 @@ def _run_in_container(instance_id, inner_cmd):
         image_name(instance_id),
         "bash", "-c", inner_cmd,
     ]
-    result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=120)
-    return result.stdout + result.stderr
+    return run_docker_with_cleanup(docker_cmd, timeout=120)
 
 
 def check_git_history_leak(instance_id):

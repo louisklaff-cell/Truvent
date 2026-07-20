@@ -4,7 +4,6 @@ Agent mit Werkzeugzugriff -- Problem + Dateiinhalt rein, Patch raus.
 Testfrage: verarbeitet unser Harness echten KI-Output ueberhaupt
 korrekt (nicht nur unsere eigenen sauberen Gold Patches/Mutanten)?
 """
-import os
 import re
 import sys
 from pathlib import Path
@@ -13,7 +12,7 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 
 from mutation_test import check_mutant
-from run_once import load_meta
+from run_once import image_name, load_meta, run_docker_with_cleanup
 
 load_dotenv()
 
@@ -35,15 +34,11 @@ def _files_from_gold_patch(instance_id):
 
 
 def _file_content_from_container(instance_id, filepath):
-    from run_once import image_name
-    import subprocess
-
-    result = subprocess.run(
-        ["docker", "run", "--rm", "--platform", "linux/amd64",
-         image_name(instance_id), "bash", "-c", f"cat -n /testbed/{filepath}"],
-        capture_output=True, text=True, timeout=60,
-    )
-    return result.stdout
+    docker_cmd = [
+        "docker", "run", "--rm", "--platform", "linux/amd64",
+        image_name(instance_id), "bash", "-c", f"cat -n /testbed/{filepath}",
+    ]
+    return run_docker_with_cleanup(docker_cmd, timeout=60)
 
 
 def _extract_patch(response_text):
@@ -82,6 +77,7 @@ VERDICT_LABELS = {
     "MUTANT_UNGUELTIG": "PATCH_UNGUELTIG",   # Patch liess sich nicht anwenden
     "KORREKT_ABGELEHNT": "AGENT_GESCHEITERT", # mind. ein Test schlaegt fehl
     "FALSE_ACCEPT": "AGENT_ERFOLGREICH",      # alle Tests bestanden
+    "TIMEOUT": "TIMEOUT",                     # Container-Timeout, kein Testergebnis
 }
 
 

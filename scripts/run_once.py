@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 TASKS_DIR = Path(__file__).parent.parent / "tasks"
@@ -121,7 +122,22 @@ REPO_CONFIGS = {
 # Image commited -- entspricht dem Pin "Image einmal bauen, dann nur laufen
 # lassen" aus phase0.md.
 IMAGE_OVERRIDES = {
-    "pylint-dev__pylint-4661": "truvent/sweb.eval.x86_64.pylint-dev_1776_pylint-4661.fixed:latest",
+    "pylint-dev__pylint-4661": "truvent/sweb.eval.x86_64.pylint-dev_1776_pylint-4661.fixed",
+}
+
+# Digest-Pins: garantieren ein WIRKLICH unveraenderliches Image. Der
+# :latest-Tag allein reicht nicht -- wuerde der Anbieter (oder wir selbst,
+# lokal) das Tag jemals neu veroeffentlichen, wuerden wir stillschweigend
+# ein anderes Image bekommen, ohne es zu merken. Digest ermittelt via
+# `docker images --digests`. Fehlt ein Eintrag hier (z.B. bei neuen
+# Aufgaben), faellt image_name() auf :latest zurueck -- das Fehlen wird
+# absichtlich sichtbar geloggt, nicht stillschweigend akzeptiert.
+IMAGE_DIGESTS = {
+    "django__django-10880": "sha256:dee440908552bf57c2d43c0bc83b244c37488b9b6ef6ef45df5733760aae74e1",
+    "psf__requests-1142": "sha256:9b0b13a4a762e809a60424f8fd9ba40b45f87874de87479a771e4e673f937d59",
+    "pylint-dev__pylint-4661": "sha256:cbdd73a59ae0b5344b5bb45804d4069cf5bbd669fce555cd5471ee3c1dc115cc",
+    "pytest-dev__pytest-10051": "sha256:46de1ca632c3caa994438bb74a500fe78f9aa05c1cc7e8becba34f98d785fd7c",
+    "sympy__sympy-11618": "sha256:12f3a6f64bb8ca17304839d3d5ca69b00e1e8d0b9034b72bb773b374e80d4307",
 }
 
 
@@ -131,10 +147,16 @@ def load_meta(instance_id):
 
 
 def image_name(instance_id):
-    if instance_id in IMAGE_OVERRIDES:
-        return IMAGE_OVERRIDES[instance_id]
-    suffix = instance_id.replace("__", "_1776_")
-    return f"swebench/sweb.eval.x86_64.{suffix}:latest"
+    base = IMAGE_OVERRIDES.get(instance_id)
+    if base is None:
+        suffix = instance_id.replace("__", "_1776_")
+        base = f"swebench/sweb.eval.x86_64.{suffix}"
+
+    digest = IMAGE_DIGESTS.get(instance_id)
+    if digest is None:
+        print(f"WARNUNG: kein Digest-Pin fuer {instance_id} -- falle auf :latest zurueck (nicht garantiert unveraenderlich)", file=sys.stderr)
+        return f"{base}:latest"
+    return f"{base}@{digest}"
 
 
 def expected_labels(meta):
@@ -143,6 +165,27 @@ def expected_labels(meta):
 
 def parse_results(output, meta):
     return REPO_CONFIGS[meta["repo"]]["parse"](output)
+
+
+def run_docker_with_cleanup(docker_cmd, timeout=300):
+    """Fuehrt einen `docker run --rm ...`-Befehl aus, mit garantiertem
+    Aufraeumen bei Timeout. --rm allein reicht nicht: killt Python den
+    docker-CLI-Prozess bei Ablauf des Timeouts (subprocess.run sendet
+    SIGKILL), kann der Container selbst verwaist im Hintergrund weiter-
+    laufen, weil --rm nur beim Container-Ende greift, nicht beim Tod
+    des CLI-Clients. Deshalb: expliziter Name + aktives `docker kill`
+    bei Timeout, statt eine unbehandelte Exception hochzureichen.
+
+    Erwartet docker_cmd im Format ["docker", "run", "--rm", ...rest].
+    """
+    container_name = f"truvent-{uuid.uuid4().hex[:12]}"
+    full_cmd = docker_cmd[:3] + ["--name", container_name] + docker_cmd[3:]
+    try:
+        result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
+        return result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=30)
+        return f"TRUVENT_TIMEOUT: Container nach {timeout}s abgebrochen und aufgeraeumt (Name: {container_name})"
 
 
 def run_once(instance_id):
@@ -159,6 +202,8 @@ def run_once(instance_id):
         "--network", "none",
         "-e", "PYTHONHASHSEED=0",
         "-e", "PYTHONIOENCODING=UTF-8",
+        "-e", "LC_ALL=C.UTF-8",
+        "-e", "LANG=C.UTF-8",
         "-e", "TZ=UTC",
         "-e", "OMP_NUM_THREADS=1",
         "-e", "OPENBLAS_NUM_THREADS=1",
@@ -168,8 +213,8 @@ def run_once(instance_id):
         "bash", "-c", inner_cmd,
     ]
 
-    result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=300)
-    return result.stdout + result.stderr, meta
+    output = run_docker_with_cleanup(docker_cmd, timeout=300)
+    return output, meta
 
 
 def check(instance_id):

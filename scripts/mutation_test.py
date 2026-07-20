@@ -11,7 +11,6 @@ ein temporaeres Verzeichnis mit test.patch (unveraendert) + Mutant
 (als gold.patch benannt) und mounten das statt des echten Task-Ordners.
 """
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -23,6 +22,7 @@ from run_once import (
     image_name,
     load_meta,
     parse_results,
+    run_docker_with_cleanup,
 )
 
 TASKS_DIR = Path(__file__).parent.parent / "tasks"
@@ -48,6 +48,8 @@ def run_with_mutant(instance_id, mutant_path):
             "--network", "none",
             "-e", "PYTHONHASHSEED=0",
             "-e", "PYTHONIOENCODING=UTF-8",
+            "-e", "LC_ALL=C.UTF-8",
+            "-e", "LANG=C.UTF-8",
             "-e", "TZ=UTC",
             "-e", "OMP_NUM_THREADS=1",
             "-e", "OPENBLAS_NUM_THREADS=1",
@@ -56,12 +58,19 @@ def run_with_mutant(instance_id, mutant_path):
             image_name(instance_id),
             "bash", "-c", inner_cmd,
         ]
-        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=300)
-        return result.stdout + result.stderr, meta
+        output = run_docker_with_cleanup(docker_cmd, timeout=300)
+        return output, meta
 
 
 def check_mutant(instance_id, mutant_path):
     output, meta = run_with_mutant(instance_id, mutant_path)
+
+    # Timeout ist ein eigener Zustand -- weder "Patch ungueltig" noch ein
+    # Testergebnis. Getrennt behandeln statt faelschlich als UNGUELTIG
+    # zu werten (der Patch koennte gueltig gewesen sein, die Tests haben
+    # nur zu lange gebraucht).
+    if output.startswith("TRUVENT_TIMEOUT"):
+        return "TIMEOUT", output
 
     # Wenn der Marker TRUVENT_APPLY_OK fehlt, ist das Patchen fehlgeschlagen --
     # egal mit welcher Fehlermeldung. Robuster als nach bekannten Fehler-
