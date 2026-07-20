@@ -3,3 +3,4 @@ __pycache__/
 .env
 .DS_Store
 tasks/pylint-dev__pylint-4661/
+docker-fixes/pylint-dev__pylint-4661.Dockerfile
