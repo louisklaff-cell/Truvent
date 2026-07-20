@@ -78,6 +78,7 @@ VERDICT_LABELS = {
     "KORREKT_ABGELEHNT": "AGENT_GESCHEITERT", # mind. ein Test schlaegt fehl
     "FALSE_ACCEPT": "AGENT_ERFOLGREICH",      # alle Tests bestanden
     "TIMEOUT": "TIMEOUT",                     # Container-Timeout, kein Testergebnis
+    "KANARIENVOGEL_VERLETZT": "MANIPULATION_ERKANNT",  # Testauswertung selbst manipuliert
 }
 
 

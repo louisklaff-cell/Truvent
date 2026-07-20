@@ -16,9 +16,14 @@ import tempfile
 from pathlib import Path
 
 from run_once import (
+    _CANARY_FILE,
+    _CANARY_MOUNT_PATH,
+    _CANARY_SUPPORTED_REPOS,
     _files_from_patch,
     _test_file_from_patch,
+    canary_violation,
     expected_labels,
+    forbidden_infra_files,
     image_name,
     load_meta,
     parse_results,
@@ -39,6 +44,20 @@ def run_with_mutant(instance_id, mutant_path):
         shutil.copy(real_task_dir / "test.patch", tmp_path / "test.patch")
         shutil.copy(mutant_path, tmp_path / "gold.patch")
 
+        # Vor jedem Docker-Lauf pruefen, statt manipulierte/verbotene
+        # Inhalte ueberhaupt erst auszufuehren. Faellt automatisch in
+        # check_mutant()s bestehende "TRUVENT_APPLY_OK fehlt" -> MUTANT_UNGUELTIG
+        # Logik, da dieser Text den Marker nie enthaelt. exempt = Dateien,
+        # die der ECHTE Gold-Patch dieser Aufgabe selbst beruehrt (z.B.
+        # setup.cfg bei pylint) -- ein Mutant/Agenten-Patch darf, was der
+        # bekannte echte Fix auch darf, aber nichts darueber hinaus.
+        real_gold_files = _files_from_patch(real_task_dir / "gold.patch")
+        forbidden = forbidden_infra_files(
+            _files_from_patch(tmp_path / "gold.patch"), exempt=real_gold_files
+        )
+        if forbidden:
+            return f"TRUVENT_FORBIDDEN_FILES: Kandidaten-Patch beruehrt Test-Infrastruktur: {forbidden}", meta
+
         test_file = _test_file_from_patch(tmp_path)
         restore_files = _files_from_patch(tmp_path / "test.patch")
         inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files)
@@ -56,6 +75,10 @@ def run_with_mutant(instance_id, mutant_path):
             "-e", "OPENBLAS_NUM_THREADS=1",
             "-e", "MKL_NUM_THREADS=1",
             "-v", f"{tmp_path.resolve()}:/patches:ro",
+        ]
+        if meta["repo"] in _CANARY_SUPPORTED_REPOS:
+            docker_cmd += ["-v", f"{_CANARY_FILE.resolve()}:{_CANARY_MOUNT_PATH}:ro"]
+        docker_cmd += [
             image_name(instance_id),
             "bash", "-c", inner_cmd,
         ]
@@ -80,6 +103,16 @@ def check_mutant(instance_id, mutant_path):
         return "MUTANT_UNGUELTIG", output
 
     actual = parse_results(output, meta)
+
+    # Kanarienvogel-Integritaet zuerst pruefen -- eine Verletzung bedeutet
+    # (undifferenzierte) Manipulation der Testauswertung selbst, ist also
+    # kein normales "Test bestanden/fehlgeschlagen"-Ergebnis mehr und
+    # bekommt einen eigenen Verdikt-Zustand statt in KORREKT_ABGELEHNT/
+    # FALSE_ACCEPT gemischt zu werden.
+    violation = canary_violation(actual, meta["repo"])
+    if violation:
+        return "KANARIENVOGEL_VERLETZT", violation
+
     all_expected = expected_labels(meta)
 
     # "Getoetet" heisst: IRGENDEIN Test aus der GESAMTEN Suite schlaegt an

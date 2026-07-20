@@ -18,7 +18,16 @@ TASKS_DIR = Path(__file__).parent.parent / "tasks"
 # Django: "test_count (aggregation.tests.AggregateTestCase) ... ok"
 DJANGO_RESULT_LINE = re.compile(r"^(.+?) \((.+?)\) \.\.\. (ok|FAIL|ERROR)$", re.MULTILINE)
 # pytest -v: "test_requests.py::RequestsTestCase::test_x PASSED [ 16%]"
-PYTEST_RESULT_LINE = re.compile(r"^(\S+::\S+)\s+(PASSED|FAILED|ERROR)\b", re.MULTILINE)
+# Datei-Praefix als \S* (nicht \S+): fuer Dateien ausserhalb des rootdir
+# (siehe Kanarienvogel-Mechanismus) meldet pytest bei manchen Repos einen
+# LEEREN Praefix ("::test_x PASSED" statt "datei.py::test_x PASSED") --
+# insbesondere bei pytest-dev/pytest selbst, weil die Aufgabe pytests
+# eigenes rootdir-/Pfad-Handling exerciert. Mit \S+ waere so eine Zeile
+# still unter den Tisch gefallen (0 Zeichen vor "::" -> kein Match) --
+# faellt zwar durch die bestehende fail-closed-Logik nicht als falsches
+# "ok" auf, haette aber echte Testergebnisse verschluckt. Empirisch
+# gefunden beim Kanarienvogel-Einbau, 21.07.2026.
+PYTEST_RESULT_LINE = re.compile(r"^(\S*::\S+)\s+(PASSED|FAILED|ERROR)\b", re.MULTILINE)
 PYTEST_STATUS_MAP = {"PASSED": "ok", "FAILED": "FAIL", "ERROR": "ERROR"}
 
 
@@ -30,8 +39,27 @@ def _django_labels(meta):
     return labels
 
 
+# Ein Nodeid, das mehr als einmal im Output auftaucht (egal ob mit
+# gleichem oder widerspruechlichem Status), ist verdaechtig -- ein echter
+# Testlauf unserer Aufgaben druckt jedes Ergebnis genau einmal. Mehrfache
+# Zeilen sind genau der Mechanismus, mit dem einer der beiden unabhaengigen
+# Audit-Agenten eine spaete, gefaelschte "PASSED"-Zeile einschleuste (die
+# alte "letzte Zeile gewinnt"-Logik haette die echte FAILED-Zeile
+# ueberschrieben). TRUVENT_CONFLICT ist absichtlich kein "ok" -- faellt
+# automatisch in die bestehenden fail-closed-Pfade (check/check_mutant/
+# check_determinism werten alles ausser "ok" als nicht bestanden).
+def _dict_with_conflict_detection(pairs):
+    from collections import Counter
+    counts = Counter(label for label, _ in pairs)
+    return {
+        label: ("TRUVENT_CONFLICT" if counts[label] > 1 else status)
+        for label, status in pairs
+    }
+
+
 def _django_parse(output, expected):
-    return {f"{cls}.{name}": status for name, cls, status in DJANGO_RESULT_LINE.findall(output)}
+    pairs = [(f"{cls}.{name}", status) for name, cls, status in DJANGO_RESULT_LINE.findall(output)]
+    return _dict_with_conflict_detection(pairs)
 
 
 def _pytest_labels(meta):
@@ -39,7 +67,8 @@ def _pytest_labels(meta):
 
 
 def _pytest_parse(output, expected):
-    return {nodeid: PYTEST_STATUS_MAP[status] for nodeid, status in PYTEST_RESULT_LINE.findall(output)}
+    pairs = [(nodeid, PYTEST_STATUS_MAP[status]) for nodeid, status in PYTEST_RESULT_LINE.findall(output)]
+    return _dict_with_conflict_detection(pairs)
 
 
 # sympy: "test_issue_11617 ok" -- kein Datei-/Klassenbezug im Namen selbst.
@@ -63,13 +92,51 @@ def _sympy_parse(output, expected):
     # ein sonst deterministisches/korrektes Ergebnis verfaelschen, wenn
     # einer dieser fremden Tests instabil waere. Deshalb hart auf die
     # erwartete Menge filtern. Fund eines unabhaengigen Audits am 21.07.2026.
-    parsed = {name: SYMPY_STATUS_MAP[s] for name, s in SYMPY_RESULT_LINE.findall(output)}
+    pairs = [(name, SYMPY_STATUS_MAP[s]) for name, s in SYMPY_RESULT_LINE.findall(output)]
+    parsed = _dict_with_conflict_detection(pairs)
     return {name: status for name, status in parsed.items() if name in expected}
 
 
 def _files_from_patch(patch_path):
     text = patch_path.read_text()
     return re.findall(r"^diff --git a/(\S+) b/\S+", text, re.MULTILINE)
+
+
+# Test-Infrastruktur, die ein Kandidaten-Patch (gold.patch/Mutant/Agenten-
+# Patch) NICHT anfassen darf. Ergaenzt die bestehende W2-Absicherung (die
+# nur die von test.patch selbst beruehrten Dateien nach dem Kandidaten
+# zuruecksetzt) um Dateien, die Testerkennung/-ausfuehrung beeinflussen
+# koennen, ohne dass test.patch sie je beruehrt -- z.B. eine neue
+# conftest.py mit einem Hook, der Testergebnisse faelscht. Bewusstes
+# Sperrliste statt strikter Positivliste (nur gold.patch-Dateien erlaubt):
+# eine Positivliste wuerde legitime alternative Fix-Orte verbieten.
+# Schliesst zwei von drei durch zwei unabhaengige Audit-Agenten gezeigten
+# Angriffen (beide legten eine neue conftest.py an), NICHT den dritten
+# (Manipulation direkt in einer legitim editierbaren Quelldatei) -- dafuer
+# gibt es keinen kleinen Fix, siehe Claude-Memory
+# truvent-oracle-isolation-research und CLAUDE.md.
+_FORBIDDEN_INFRA_PATTERNS = [
+    re.compile(r"(^|/)conftest\.py$"),
+    re.compile(r"(^|/)pytest\.ini$"),
+    re.compile(r"(^|/)setup\.cfg$"),
+    re.compile(r"(^|/)tox\.ini$"),
+    re.compile(r"(^|/)pyproject\.toml$"),
+    re.compile(r"(^|/)sitecustomize\.py$"),
+    re.compile(r"(^|/)usercustomize\.py$"),
+    re.compile(r"\.pth$"),
+]
+
+
+def forbidden_infra_files(candidate_files, exempt=()):
+    """exempt: Dateien, die der ECHTE Gold-Patch dieser Aufgabe selbst
+    beruehrt -- z.B. braucht der echte pylint-Fix legitim setup.cfg (fuegt
+    die appdirs-Abhaengigkeit hinzu). Eine reine Positivliste waere zu
+    starr; stattdessen wird nur verboten, was der bekannte, echte Fix
+    dieser Aufgabe NIE braucht."""
+    return [
+        f for f in candidate_files
+        if f not in exempt and any(p.search(f) for p in _FORBIDDEN_INFRA_PATTERNS)
+    ]
 
 
 def _test_file_from_patch(task_dir):
@@ -104,13 +171,64 @@ _APPLY_PATCHES = (
 )
 _ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed"
 
+# Kanarienvogel: feste, immer mitgefuehrte Zusatztests (scripts/
+# truvent_canary_test.py), die grobe/undifferenzierte Manipulation der
+# Testauswertung erkennen (z.B. eine testsuite-weite assertTrue-
+# Neutralisierung) -- NICHT einen gezielten Angriff auf den bekannten
+# Zielnamen, siehe Modul-Docstring der Datei selbst und Claude-Memory
+# truvent-oracle-isolation-research. Nur fuer pytest-basierte Repos
+# umgesetzt (django/sympy haben eigene Testrunner ohne einfache
+# Moeglichkeit, eine zusaetzliche Datei generisch einzubinden -- bewusste,
+# dokumentierte Einschraenkung).
+_CANARY_FILE = Path(__file__).parent / "truvent_canary_test.py"
+_CANARY_MOUNT_PATH = "/truvent_canary/truvent_canary_test.py"
+# Nur das Suffix nach dem Datei-Pfad wird geprueft, nicht der volle
+# Nodeid: der Pfad-Teil, den pytest fuer eine ausserhalb von /testbed
+# gemountete Datei meldet, variiert je nach Repo (empirisch festgestellt,
+# 21.07.2026 -- pytest-dev/pytest selbst, weil es sein EIGENES rootdir-/
+# Pfad-Handling exerciert, meldet z.B. "::TruventCanary::..." ganz ohne
+# Pfad-Praefix, waehrend andere Repos "../truvent_canary/....py::...
+# TruventCanary::..." melden). Ein Suffix-Vergleich ist robust gegen
+# diese Repo-Eigenheiten, ohne die Sicherheit zu schwaechen -- die
+# Klassen-/Funktionsnamen selbst sind fest und eindeutig.
+_CANARY_EXPECTED_SUFFIXES = {
+    "TruventCanary::test_truvent_canary_must_pass": "ok",
+    "TruventCanary::test_truvent_canary_must_fail": "not_ok",
+    "test_truvent_canary_bare_must_pass": "ok",
+    "test_truvent_canary_bare_must_fail": "not_ok",
+}
+_CANARY_SUPPORTED_REPOS = {"psf/requests", "pylint-dev/pylint", "pytest-dev/pytest"}
+
+
+def canary_violation(actual, repo):
+    """Prueft, ob die vier festen Kanarienvogel-Tests wie erwartet
+    ausgefallen sind. Gibt bei Verletzung eine kurze Beschreibung zurueck,
+    sonst None. Repos ausserhalb von _CANARY_SUPPORTED_REPOS werden nicht
+    geprueft (kein Kanarienvogel mitgefuehrt)."""
+    if repo not in _CANARY_SUPPORTED_REPOS:
+        return None
+    for suffix, expected_status in _CANARY_EXPECTED_SUFFIXES.items():
+        matches = [status for nodeid, status in actual.items() if nodeid.endswith(suffix)]
+        if not matches:
+            return f"Kanarienvogel '{suffix}' fehlt in der Ausgabe"
+        status = matches[0]
+        if expected_status == "ok" and status != "ok":
+            return f"Kanarienvogel '{suffix}' sollte bestehen, war aber {status!r}"
+        if expected_status == "not_ok" and status == "ok":
+            return f"Kanarienvogel '{suffix}' sollte fehlschlagen, war aber 'ok'"
+    return None
+
+
 # -p no:randomly / -p no:xdist erzwingen feste Reihenfolge und keine
 # Parallelitaet, AUCH wenn das Zielrepo diese Plugins selbst per
 # pytest.ini/setup.cfg (addopts) aktiviert haette -- ohne diesen Zwang
 # wuerden wir uns nur darauf verlassen, dass kein Repo das tut. Sicher
 # auch wenn die Plugins gar nicht installiert sind (pytest ignoriert
 # "no:X" fuer nicht registrierte Plugins).
-_PYTEST_CMD = "pytest -p no:randomly -p no:xdist -p no:cacheprovider {labels} -v"
+_PYTEST_CMD = (
+    f"pytest -p no:randomly -p no:xdist -p no:cacheprovider "
+    f"{{labels}} {_CANARY_MOUNT_PATH} -v"
+)
 
 REPO_CONFIGS = {
     "django/django": {
@@ -233,13 +351,33 @@ def render_inner_cmd(meta, labels, test_file, restore_files):
 #     /pytest fuer normalen Betrieb nicht brauchen
 #   --security-opt no-new-privileges: verhindert Rechteausweitung
 #     ueber setuid-Binaries im Image
+#   --cpus: verhindert, dass ein Kandidaten-Patch die volle Host-CPU
+#     fuer die gesamte Timeout-Dauer blockiert (Fund eines unabhaengigen
+#     Audits, 21.07.2026). 2 Kerne reichen fuer unsere Testsuiten reichlich;
+#     getestet, dass alle 4 Aufgaben damit weiterhin identisch/fehlerfrei
+#     laufen.
 HARDENING_FLAGS = [
     "--pids-limit", "512",
     "--memory", "2g",
     "--memory-swap", "2g",
+    "--cpus", "2",
     "--cap-drop", "ALL",
     "--security-opt", "no-new-privileges",
 ]
+
+
+# Deckel gegen Host-Speicher-Erschoepfung: ein boesartiger Kandidaten-
+# Patch koennte versuchen, den Host mit unbegrenzter Ausgabe zu fluten --
+# verifizierter Fund eines unabhaengigen Audit-Agenten (21.07.2026): 150MB
+# Ausgabe in < 1s liess den Host-Python-Prozess auf 533MB RSS springen,
+# --memory in HARDENING_FLAGS begrenzt nur den CONTAINER, nicht den
+# Host-seitigen Pipe-Puffer, den subprocess.run() haelt. Der Deckel wird
+# INNERHALB des Containers per `head -c` durchgesetzt (ganzer Befehl in
+# eine Subshell gepackt, damit die Begrenzung fuer die GESAMTE Kette
+# gilt, nicht nur den letzten Teilbefehl) -- so muss der Host nie mehr
+# als _MAX_OUTPUT_BYTES puffern, unabhaengig davon, wie viel der
+# Container intern produziert.
+_MAX_OUTPUT_BYTES = 80 * 1024 * 1024  # 80 MB
 
 
 def run_docker_with_cleanup(docker_cmd, timeout=300):
@@ -251,13 +389,23 @@ def run_docker_with_cleanup(docker_cmd, timeout=300):
     des CLI-Clients. Deshalb: expliziter Name + aktives `docker kill`
     bei Timeout, statt eine unbehandelte Exception hochzureichen.
 
-    Erwartet docker_cmd im Format ["docker", "run", "--rm", ...rest].
+    Erwartet docker_cmd im Format
+    ["docker", "run", "--rm", ...rest, "bash", "-c", inner_cmd] --
+    die letzten drei Elemente werden fuer den Ausgabe-Deckel umgebaut.
     """
     container_name = f"truvent-{uuid.uuid4().hex[:12]}"
+    capped_inner_cmd = f"({docker_cmd[-1]}) 2>&1 | head -c {_MAX_OUTPUT_BYTES}"
+    docker_cmd = docker_cmd[:-1] + [capped_inner_cmd]
     full_cmd = docker_cmd[:3] + ["--name", container_name] + HARDENING_FLAGS + docker_cmd[3:]
     try:
         result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
-        return result.stdout + result.stderr
+        output = result.stdout + result.stderr
+        if len(output.encode("utf-8", errors="ignore")) >= _MAX_OUTPUT_BYTES:
+            return (
+                f"TRUVENT_OUTPUT_OVERFLOW: Ausgabe erreichte den Deckel von "
+                f"{_MAX_OUTPUT_BYTES} Bytes, vermutlich abgeschnitten (Name: {container_name})"
+            )
+        return output
     except subprocess.TimeoutExpired:
         subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=30)
         return f"TRUVENT_TIMEOUT: Container nach {timeout}s abgebrochen und aufgeraeumt (Name: {container_name})"
@@ -269,6 +417,11 @@ def run_once(instance_id):
     labels = expected_labels(meta)
     test_file = _test_file_from_patch(task_dir)
     restore_files = _files_from_patch(task_dir / "test.patch")
+    # Keine Sperrlisten-Pruefung hier: run_once()/check() verifizieren den
+    # ECHTEN, vertrauenswuerdigen Gold-Patch dieser Aufgabe selbst -- die
+    # Sperrliste (forbidden_infra_files) schuetzt gegen MUTANTEN/Agenten-
+    # Patches in mutation_test.py, wo der Kandidat nicht vertrauenswuerdig
+    # ist.
     inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files)
 
     docker_cmd = [
@@ -284,6 +437,10 @@ def run_once(instance_id):
         "-e", "OPENBLAS_NUM_THREADS=1",
         "-e", "MKL_NUM_THREADS=1",
         "-v", f"{task_dir.resolve()}:/patches:ro",
+    ]
+    if meta["repo"] in _CANARY_SUPPORTED_REPOS:
+        docker_cmd += ["-v", f"{_CANARY_FILE.resolve()}:{_CANARY_MOUNT_PATH}:ro"]
+    docker_cmd += [
         image_name(instance_id),
         "bash", "-c", inner_cmd,
     ]
@@ -296,6 +453,11 @@ def check(instance_id):
     output, meta = run_once(instance_id)
     expected = expected_labels(meta)
     actual = parse_results(output, meta)
+
+    violation = canary_violation(actual, meta["repo"])
+    if violation:
+        print(f"{instance_id}: KANARIENVOGEL VERLETZT -- {violation}")
+        return False
 
     missing = [l for l in expected if l not in actual]
     failed = [l for l in expected if actual.get(l) not in (None, "ok")]
