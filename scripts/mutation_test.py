@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 from run_once import (
+    _files_from_patch,
     _test_file_from_patch,
     expected_labels,
     image_name,
@@ -39,7 +40,8 @@ def run_with_mutant(instance_id, mutant_path):
         shutil.copy(mutant_path, tmp_path / "gold.patch")
 
         test_file = _test_file_from_patch(tmp_path)
-        inner_cmd = render_inner_cmd(meta, labels, test_file)
+        restore_files = _files_from_patch(tmp_path / "test.patch")
+        inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files)
 
         docker_cmd = [
             "docker", "run", "--rm",

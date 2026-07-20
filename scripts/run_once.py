@@ -30,7 +30,7 @@ def _django_labels(meta):
     return labels
 
 
-def _django_parse(output):
+def _django_parse(output, expected):
     return {f"{cls}.{name}": status for name, cls, status in DJANGO_RESULT_LINE.findall(output)}
 
 
@@ -38,7 +38,7 @@ def _pytest_labels(meta):
     return meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"]
 
 
-def _pytest_parse(output):
+def _pytest_parse(output, expected):
     return {nodeid: PYTEST_STATUS_MAP[status] for nodeid, status in PYTEST_RESULT_LINE.findall(output)}
 
 
@@ -53,16 +53,29 @@ def _sympy_labels(meta):
     return meta["FAIL_TO_PASS"] + meta["PASS_TO_PASS"]
 
 
-def _sympy_parse(output):
-    return {name: SYMPY_STATUS_MAP[s] for name, s in SYMPY_RESULT_LINE.findall(output)}
+def _sympy_parse(output, expected):
+    # `python bin/test -v {test_file}` laeuft ueber die GANZE Testdatei,
+    # nicht nur ueber die in FAIL_TO_PASS/PASS_TO_PASS genannten Tests --
+    # anders als bei django/pytest gibt es hier keine Moeglichkeit, gezielt
+    # nur einzelne Testnamen anzugeben. Ohne Filter landen zusaetzliche,
+    # fuer diese Aufgabe irrelevante Tests aus derselben Datei im Ergebnis
+    # (bei sympy__sympy-11618 z.B. 7 statt der erwarteten 5) -- das koennte
+    # ein sonst deterministisches/korrektes Ergebnis verfaelschen, wenn
+    # einer dieser fremden Tests instabil waere. Deshalb hart auf die
+    # erwartete Menge filtern. Fund eines unabhaengigen Audits am 21.07.2026.
+    parsed = {name: SYMPY_STATUS_MAP[s] for name, s in SYMPY_RESULT_LINE.findall(output)}
+    return {name: status for name, status in parsed.items() if name in expected}
+
+
+def _files_from_patch(patch_path):
+    text = patch_path.read_text()
+    return re.findall(r"^diff --git a/(\S+) b/\S+", text, re.MULTILINE)
 
 
 def _test_file_from_patch(task_dir):
     """sympys FAIL_TO_PASS/PASS_TO_PASS nennen keine Datei -- wir nehmen die
     Datei, die test.patch selbst aendert (dort werden die Tests definiert)."""
-    text = (task_dir / "test.patch").read_text()
-    match = re.search(r"^diff --git a/(\S+) b/\S+", text, re.MULTILINE)
-    return match.group(1)
+    return _files_from_patch(task_dir / "test.patch")[0]
 
 
 # TRUVENT_APPLY_OK ist ein Marker, kein Fehlertext-Rateversuch: Wir pruefen
@@ -70,9 +83,24 @@ def _test_file_from_patch(task_dir):
 # git-apply-Fehlermeldungen zu erraten (die je nach git-Version/Locale/
 # Fehlerart variieren koennen). Fehlt der Marker, ist EGAL welcher Fehler
 # beim Patchen aufgetreten ist -- der Patch hat nicht angewendet.
+#
+# Reihenfolge bewusst: KANDIDAT zuerst (gold.patch -- das kann auch ein
+# Mutant oder ein Agenten-Patch sein), DANACH werden genau die Dateien,
+# die test.patch aendert, per `git checkout --` hart auf den base_commit-
+# Stand zurueckgesetzt, BEVOR test.patch frisch angewendet wird. Grund:
+# ein Kandidaten-Patch koennte -- versehentlich oder absichtlich -- die
+# Testdatei selbst mit anfassen (z.B. eine Assertion abschwaechen oder
+# einen Test loeschen) und so die eigentliche Pruefung aushebeln. Mit der
+# alten Reihenfolge (test.patch zuerst, Kandidat danach) haette so eine
+# Aenderung ueberlebt, weil sie NACH test.patch kam und nichts sie mehr
+# zurueckgesetzt haette. Fund eines unabhaengigen Audits am 21.07.2026.
+# Fuer alle 4 aktuellen Aufgaben aendert das am Erfolgspfad nichts: dort
+# ruehren gold.patch und test.patch ohnehin komplett unterschiedliche
+# Dateien an (gepr. Quellcode vs. Testdatei), git-apply-Kontextzeilen
+# haengen nicht von der Reihenfolge ab, wenn die Dateien disjunkt sind.
 _APPLY_PATCHES = (
-    "cd /testbed && git apply /patches/test.patch && git apply /patches/gold.patch "
-    "&& echo TRUVENT_APPLY_OK"
+    "cd /testbed && git apply /patches/gold.patch && {restore_cmd} && "
+    "git apply /patches/test.patch && echo TRUVENT_APPLY_OK"
 )
 _ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed"
 
@@ -165,10 +193,11 @@ def expected_labels(meta):
 
 
 def parse_results(output, meta):
-    return REPO_CONFIGS[meta["repo"]]["parse"](output)
+    expected = set(expected_labels(meta))
+    return REPO_CONFIGS[meta["repo"]]["parse"](output, expected)
 
 
-def render_inner_cmd(meta, labels, test_file):
+def render_inner_cmd(meta, labels, test_file, restore_files):
     """Baut den Shell-Befehl aus repo-spezifischem Template + Testnamen/
     Dateipfad zusammen -- mit shlex.quote() pro Wert, nicht durch simple
     String-Interpolation. Testnamen und Dateipfad stammen aus test.patch/
@@ -177,11 +206,21 @@ def render_inner_cmd(meta, labels, test_file):
     wird (Lackmustest 2+), koennten darin Shell-Metazeichen stecken --
     ohne Escaping waere das eine Command-Injection-Luecke innerhalb des
     Containers (durch --network none zwar eingedaemmt, aber trotzdem ein
-    echtes Risiko, kein hypothetisches)."""
+    echtes Risiko, kein hypothetisches).
+
+    restore_files: die Dateien, die test.patch aendert -- werden nach dem
+    Kandidaten-Patch per `git checkout --` zurueckgesetzt (siehe
+    _APPLY_PATCHES), damit ein Kandidaten-Patch die Testdatei nicht
+    manipulieren kann. Leere Liste -> "true" (No-Op), statt ein
+    `git checkout --` ohne Pfade abzusetzen (das waere ein Fehler)."""
     config = REPO_CONFIGS[meta["repo"]]
     quoted_labels = " ".join(shlex.quote(l) for l in labels)
     quoted_test_file = shlex.quote(test_file) if test_file else ""
-    return config["inner_cmd"].format(labels=quoted_labels, test_file=quoted_test_file)
+    quoted_restore = " ".join(shlex.quote(f) for f in restore_files)
+    restore_cmd = f"git checkout -- {quoted_restore}" if restore_files else "true"
+    return config["inner_cmd"].format(
+        labels=quoted_labels, test_file=quoted_test_file, restore_cmd=restore_cmd
+    )
 
 
 # Sandbox-Haertung: wir fuehren fremden, nicht vertrauenswuerdigen Code
@@ -229,7 +268,8 @@ def run_once(instance_id):
     task_dir = TASKS_DIR / instance_id
     labels = expected_labels(meta)
     test_file = _test_file_from_patch(task_dir)
-    inner_cmd = render_inner_cmd(meta, labels, test_file)
+    restore_files = _files_from_patch(task_dir / "test.patch")
+    inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files)
 
     docker_cmd = [
         "docker", "run", "--rm",
