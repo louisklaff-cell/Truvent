@@ -16,12 +16,12 @@ import tempfile
 from pathlib import Path
 
 from run_once import (
-    REPO_CONFIGS,
     _test_file_from_patch,
     expected_labels,
     image_name,
     load_meta,
     parse_results,
+    render_inner_cmd,
     run_docker_with_cleanup,
 )
 
@@ -30,7 +30,6 @@ TASKS_DIR = Path(__file__).parent.parent / "tasks"
 
 def run_with_mutant(instance_id, mutant_path):
     meta = load_meta(instance_id)
-    config = REPO_CONFIGS[meta["repo"]]
     real_task_dir = TASKS_DIR / instance_id
     labels = expected_labels(meta)
 
@@ -40,7 +39,7 @@ def run_with_mutant(instance_id, mutant_path):
         shutil.copy(mutant_path, tmp_path / "gold.patch")
 
         test_file = _test_file_from_patch(tmp_path)
-        inner_cmd = config["inner_cmd"].format(labels=" ".join(labels), test_file=test_file)
+        inner_cmd = render_inner_cmd(meta, labels, test_file)
 
         docker_cmd = [
             "docker", "run", "--rm",

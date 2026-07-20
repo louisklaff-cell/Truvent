@@ -16,6 +16,7 @@ Datei -- spart Container-Startaufwand, ohne dass sich am Ergebnis
 etwas aendert (reine Konsolidierung, keine inhaltliche Aenderung).
 """
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -47,14 +48,19 @@ def _run_in_container(instance_id, inner_cmd):
 
 
 def _build_combined_cmd(files):
+    # shlex.quote() auf jeden Dateipfad: die Pfade stammen aus einem regex-
+    # Fund in gold.patch. Fuer unsere eigenen kuratierten SWE-bench-Aufgaben
+    # unkritisch, aber sobald hier mal ein Agenten- oder Kundenpatch landet
+    # (Lackmustest 2+), koennte ein Pfad Shell-Metazeichen enthalten -- ohne
+    # Escaping waere das Command Injection innerhalb des Containers.
     git_part = (
         "cd /testbed && "
         "git log --oneline | sort > /tmp/branch.txt && "
         "git log --all --oneline | sort > /tmp/all.txt && "
-        f"echo '{_GIT_MARKER}' && diff /tmp/branch.txt /tmp/all.txt"
+        f"echo {shlex.quote(_GIT_MARKER)} && diff /tmp/branch.txt /tmp/all.txt"
     )
     file_parts = [
-        f"echo '{_FILE_MARKER.format(f=f)}' && cat {f} 2>/dev/null; echo '{_FILE_END_MARKER}'"
+        f"echo {shlex.quote(_FILE_MARKER.format(f=f))} && cat {shlex.quote(f)} 2>/dev/null; echo {shlex.quote(_FILE_END_MARKER)}"
         for f in files
     ]
     return " ; ".join([git_part] + file_parts)

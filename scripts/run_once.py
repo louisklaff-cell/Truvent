@@ -7,6 +7,7 @@ Ausgabe zurueck in {test_id: status} geparst wird.
 """
 import json
 import re
+import shlex
 import subprocess
 import sys
 import uuid
@@ -167,6 +168,22 @@ def parse_results(output, meta):
     return REPO_CONFIGS[meta["repo"]]["parse"](output)
 
 
+def render_inner_cmd(meta, labels, test_file):
+    """Baut den Shell-Befehl aus repo-spezifischem Template + Testnamen/
+    Dateipfad zusammen -- mit shlex.quote() pro Wert, nicht durch simple
+    String-Interpolation. Testnamen und Dateipfad stammen aus test.patch/
+    meta.json, die zwar aktuell nur unsere eigenen kuratierten SWE-bench-
+    Daten sind, aber sobald echter Agenten- oder Kundencode verarbeitet
+    wird (Lackmustest 2+), koennten darin Shell-Metazeichen stecken --
+    ohne Escaping waere das eine Command-Injection-Luecke innerhalb des
+    Containers (durch --network none zwar eingedaemmt, aber trotzdem ein
+    echtes Risiko, kein hypothetisches)."""
+    config = REPO_CONFIGS[meta["repo"]]
+    quoted_labels = " ".join(shlex.quote(l) for l in labels)
+    quoted_test_file = shlex.quote(test_file) if test_file else ""
+    return config["inner_cmd"].format(labels=quoted_labels, test_file=quoted_test_file)
+
+
 def run_docker_with_cleanup(docker_cmd, timeout=300):
     """Fuehrt einen `docker run --rm ...`-Befehl aus, mit garantiertem
     Aufraeumen bei Timeout. --rm allein reicht nicht: killt Python den
@@ -190,11 +207,10 @@ def run_docker_with_cleanup(docker_cmd, timeout=300):
 
 def run_once(instance_id):
     meta = load_meta(instance_id)
-    config = REPO_CONFIGS[meta["repo"]]
     task_dir = TASKS_DIR / instance_id
     labels = expected_labels(meta)
     test_file = _test_file_from_patch(task_dir)
-    inner_cmd = config["inner_cmd"].format(labels=" ".join(labels), test_file=test_file)
+    inner_cmd = render_inner_cmd(meta, labels, test_file)
 
     docker_cmd = [
         "docker", "run", "--rm",
