@@ -1,0 +1,16 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -386,11 +386,13 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         self.body = body
+ 
+     def prepare_content_length(self, body):
+-        self.headers['Content-Length'] = '0'
+         if hasattr(body, 'seek') and hasattr(body, 'tell'):
+             body.seek(0, 2)
+             self.headers['Content-Length'] = str(body.tell())
+             body.seek(0, 0)
+         elif body is not None:
+             self.headers['Content-Length'] = str(len(body))
++        elif 'Content-Length' not in self.headers:
++            # Don't set Content-Length for requests with no body
++            pass

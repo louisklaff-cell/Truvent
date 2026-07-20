@@ -1,0 +1,19 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -266,8 +266,14 @@ class Point(GeometryEntity):
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        if not isinstance(p, Point):
++            p = Point(p)
++        if len(p) != len(self):
++            if len(p) < len(self):
++                p = Point(list(p.args) + [0] * (len(self) - len(p)))
++            else:
++                return p.distance(self)
++        return sqrt(sum([(a - b)**2 for a, b in zip(self.args, p.args)]))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.

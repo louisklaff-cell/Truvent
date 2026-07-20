@@ -71,7 +71,8 @@ def generate_patch(instance_id, model):
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
     )
-    return _extract_patch(response.content[0].text)
+    text_blocks = [block.text for block in response.content if block.type == "text"]
+    return _extract_patch("\n".join(text_blocks))
 
 
 # check_mutant() ist fuer absichtlich FALSCHE Patches benannt (FALSE_ACCEPT

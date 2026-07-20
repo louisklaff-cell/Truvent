@@ -1,0 +1,24 @@
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index original..fixed
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -11,6 +11,7 @@ Contains
+ from __future__ import division, print_function
+ 
+ from sympy.core import S, sympify
++from itertools import zip_longest
+ from sympy.core.compatibility import iterable
+ from sympy.core.containers import Tuple
+ from sympy.simplify import nsimplify, simplify
+@@ -266,8 +267,8 @@ class Point(GeometryEntity):
+         >>> p3.distance(Point(0, 0))
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        return sqrt(sum([(a - b)**2 for a, b in zip_longest(
++            self.args, p.args if isinstance(p, Point) else p, fillvalue=S.Zero)]))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.
