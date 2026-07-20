@@ -13,7 +13,9 @@ from mutation_test import check_mutant
 from run_agent import VERDICT_LABELS
 
 TASKS_DIR = Path(__file__).parent.parent / "tasks"
-MAX_PARALLEL = 10
+# Gleiche Speicher-Begruendung wie in check_determinism.py: 7 x 2GB = 14GB,
+# laesst Puffer auf einem 16GB-Rechner.
+MAX_PARALLEL = 7
 
 INSTANCES = [
     "django__django-10880",

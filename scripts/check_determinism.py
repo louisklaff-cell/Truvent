@@ -15,7 +15,13 @@ from concurrent.futures import ThreadPoolExecutor
 from run_once import expected_labels, load_meta, parse_results, run_once
 
 N_RUNS = 10
-MAX_PARALLEL = 10  # Obergrenze, um den Host nicht zu ueberlasten
+# 7 x 2GB (HARDENING_FLAGS-Speicherlimit pro Container) = 14GB von 16GB RAM --
+# laesst bewusst ~2GB Puffer fuer macOS selbst. MAX_PARALLEL=10 haette exakt
+# 20GB gebraucht, mehr als der Rechner hat -- Ressourcenkontention (Swapping,
+# OOM) haette selbst Nichtdeterminismus einfuehren koennen, genau das, was
+# dieser Check ausschliessen soll. Mit dem Gruender abgestimmt (21.07.2026,
+# Fund des unabhaengigen Audits), Kontrapunkt zu obigem Sicherheits-Trade-off.
+MAX_PARALLEL = 7
 
 
 def fingerprint(results):
