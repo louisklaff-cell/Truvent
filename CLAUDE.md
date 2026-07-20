@@ -1,8 +1,14 @@
 # CLAUDE.md — Truvent
 
 > Persistenter Kontext-Anker. Diese Datei wird bei jedem Start automatisch gelesen.
-> Stand: Juli 2026 · Phase: Vor Phase 0 (noch kein Code) · Arbeitstitel: Truvent (Platzhalter)
+> Stand: 21.07.2026 · Phase: Lackmustest 2 (Kundenansprache läuft) · Arbeitstitel: Truvent (Platzhalter)
 > Pflege: Nach jedem Meilenstein Abschnitt "Status & nächste Aktionen" aktualisieren. Rest bleibt stabil.
+>
+> **Weitere Dokumente im Repo (bei Bedarf nachladen, nicht automatisch geladen):**
+> `README.md` — Code-Architektur: wie die Skripte zusammenhängen, wie man sie ausführt. **Immer zuerst lesen, bevor am Code gearbeitet wird.**
+> `phase0.md` — Detaillierter Phase-0-Plan (Aufgabenauswahl, Umgebungs-Pins, Definition of Done).
+> `docs/lackmustest2_prep.md` — Kundenansprache: Zielprofil, Pilot-Angebot, Spickzettel mit Marktzahlen.
+> `docs/pilot_targets.md` — konkrete recherchierte Zielfirmen + fertige, personalisierte Anfrage-Nachrichten.
 
 ## Arbeitsprinzip für dich, Claude Code (WICHTIGSTE REGEL)
 Nicht "schreib mir das Projekt". Stattdessen: **kleinste lauffähige Einheit, jede Zeile erklärt, bevor du sie schreibst.** Generiere niemals ganze Skripte auf einmal. Der Gründer muss jede Zeile verstehen — er soll später einen CTO führen und einem Investor antworten können. Frage nach, statt anzunehmen.
