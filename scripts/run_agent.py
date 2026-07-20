@@ -82,7 +82,13 @@ VERDICT_LABELS = {
 
 
 def run_agent_attempt(instance_id, model, run_number, out_dir):
-    patch_text = generate_patch(instance_id, model)
+    try:
+        patch_text = generate_patch(instance_id, model)
+    except Exception as e:
+        # Ein einzelner API-Fehler (Rate-Limit, Netzwerk, ...) soll nicht
+        # den gesamten Batch abbrechen -- als eigener Zustand zurueckgeben.
+        return "API_FEHLER", str(e), None
+
     patch_path = out_dir / f"{model}_run{run_number}.patch"
     patch_path.write_text(patch_text)
 
@@ -100,6 +106,7 @@ if __name__ == "__main__":
 
     verdict, detail, patch_path = run_agent_attempt(instance_id, model, run_number, out_dir)
     print(f"{instance_id} / {model} / Lauf {run_number}: {verdict}")
-    print(f"  Patch gespeichert: {patch_path}")
+    if patch_path:
+        print(f"  Patch gespeichert: {patch_path}")
     if detail:
         print(f"  {detail}")
