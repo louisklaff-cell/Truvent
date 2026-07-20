@@ -46,6 +46,10 @@ Alle anderen Skripte bauen darauf auf, indem sie **welcher Patch angewendet wird
 - `mutants_naive/` — mechanisch/blind erzeugte Vergleichs-Mutanten
 - `agent_patches/` — von echten KI-Modellen generierte Patches (Mini-Phase-0.5)
 
+## `docker-fixes/`
+
+Manche offiziellen SWE-bench-Images haben Lücken (z. B. fehlende Abhängigkeiten). Statt das nur einmalig manuell im laufenden Container zu reparieren (`docker commit`, nur auf diesem einen Rechner reproduzierbar), liegt hier pro betroffener Aufgabe ein Dockerfile, das den Fix nachvollziehbar und auf jeder Maschine neu baubar macht. Nach dem Bauen den neuen Digest in `scripts/run_once.py` → `IMAGE_DIGESTS` eintragen.
+
 ## Typische Befehle
 
 ```bash
