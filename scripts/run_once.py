@@ -135,7 +135,7 @@ IMAGE_OVERRIDES = {
 IMAGE_DIGESTS = {
     "django__django-10880": "sha256:dee440908552bf57c2d43c0bc83b244c37488b9b6ef6ef45df5733760aae74e1",
     "psf__requests-1142": "sha256:9b0b13a4a762e809a60424f8fd9ba40b45f87874de87479a771e4e673f937d59",
-    "pylint-dev__pylint-4661": "sha256:cbdd73a59ae0b5344b5bb45804d4069cf5bbd669fce555cd5471ee3c1dc115cc",
+    "pylint-dev__pylint-4661": "sha256:01c7a9ff6cfe0905bdd4807b30b608f63b253dd9ea1fbc3557b940f880ae8d9e",  # neu gebaut aus docker-fixes/pylint-dev__pylint-4661.Dockerfile
     "pytest-dev__pytest-10051": "sha256:46de1ca632c3caa994438bb74a500fe78f9aa05c1cc7e8becba34f98d785fd7c",
     "sympy__sympy-11618": "sha256:12f3a6f64bb8ca17304839d3d5ca69b00e1e8d0b9034b72bb773b374e80d4307",
 }
