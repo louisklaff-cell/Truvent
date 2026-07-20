@@ -184,6 +184,25 @@ def render_inner_cmd(meta, labels, test_file):
     return config["inner_cmd"].format(labels=quoted_labels, test_file=quoted_test_file)
 
 
+# Sandbox-Haertung: wir fuehren fremden, nicht vertrauenswuerdigen Code
+# aus (KI-Agenten-Patches, spaeter Kundencode in Lackmustest 2+) --
+# --network none allein reicht nicht. Getestet, dass unsere Aufgaben
+# damit weiterhin fehlerfrei laufen (identisches Ergebnis wie ohne):
+#   --pids-limit: verhindert Fork-Bomben
+#   --memory/--memory-swap: verhindert Speicher-Erschoepfung
+#   --cap-drop ALL: entzieht alle Linux-Capabilities, die git/python
+#     /pytest fuer normalen Betrieb nicht brauchen
+#   --security-opt no-new-privileges: verhindert Rechteausweitung
+#     ueber setuid-Binaries im Image
+HARDENING_FLAGS = [
+    "--pids-limit", "512",
+    "--memory", "2g",
+    "--memory-swap", "2g",
+    "--cap-drop", "ALL",
+    "--security-opt", "no-new-privileges",
+]
+
+
 def run_docker_with_cleanup(docker_cmd, timeout=300):
     """Fuehrt einen `docker run --rm ...`-Befehl aus, mit garantiertem
     Aufraeumen bei Timeout. --rm allein reicht nicht: killt Python den
@@ -196,7 +215,7 @@ def run_docker_with_cleanup(docker_cmd, timeout=300):
     Erwartet docker_cmd im Format ["docker", "run", "--rm", ...rest].
     """
     container_name = f"truvent-{uuid.uuid4().hex[:12]}"
-    full_cmd = docker_cmd[:3] + ["--name", container_name] + docker_cmd[3:]
+    full_cmd = docker_cmd[:3] + ["--name", container_name] + HARDENING_FLAGS + docker_cmd[3:]
     try:
         result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
         return result.stdout + result.stderr
