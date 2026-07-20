@@ -63,8 +63,24 @@ def _test_file_from_patch(task_dir):
     return match.group(1)
 
 
-_APPLY_PATCHES = "cd /testbed && git apply /patches/test.patch && git apply /patches/gold.patch"
+# TRUVENT_APPLY_OK ist ein Marker, kein Fehlertext-Rateversuch: Wir pruefen
+# spaeter nur, ob diese Zeile in der Ausgabe steht, statt bekannte
+# git-apply-Fehlermeldungen zu erraten (die je nach git-Version/Locale/
+# Fehlerart variieren koennen). Fehlt der Marker, ist EGAL welcher Fehler
+# beim Patchen aufgetreten ist -- der Patch hat nicht angewendet.
+_APPLY_PATCHES = (
+    "cd /testbed && git apply /patches/test.patch && git apply /patches/gold.patch "
+    "&& echo TRUVENT_APPLY_OK"
+)
 _ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed"
+
+# -p no:randomly / -p no:xdist erzwingen feste Reihenfolge und keine
+# Parallelitaet, AUCH wenn das Zielrepo diese Plugins selbst per
+# pytest.ini/setup.cfg (addopts) aktiviert haette -- ohne diesen Zwang
+# wuerden wir uns nur darauf verlassen, dass kein Repo das tut. Sicher
+# auch wenn die Plugins gar nicht installiert sind (pytest ignoriert
+# "no:X" fuer nicht registrierte Plugins).
+_PYTEST_CMD = "pytest -p no:randomly -p no:xdist -p no:cacheprovider {labels} -v"
 
 REPO_CONFIGS = {
     "django/django": {
@@ -78,17 +94,17 @@ REPO_CONFIGS = {
     "psf/requests": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_PYTEST_CMD}",
     },
     "pylint-dev/pylint": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_PYTEST_CMD}",
     },
     "pytest-dev/pytest": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && pytest {{labels}} -v",
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_PYTEST_CMD}",
     },
     "sympy/sympy": {
         "labels": _sympy_labels,

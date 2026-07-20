@@ -49,6 +49,9 @@ def run_with_mutant(instance_id, mutant_path):
             "-e", "PYTHONHASHSEED=0",
             "-e", "PYTHONIOENCODING=UTF-8",
             "-e", "TZ=UTC",
+            "-e", "OMP_NUM_THREADS=1",
+            "-e", "OPENBLAS_NUM_THREADS=1",
+            "-e", "MKL_NUM_THREADS=1",
             "-v", f"{tmp_path.resolve()}:/patches:ro",
             image_name(instance_id),
             "bash", "-c", inner_cmd,
@@ -60,10 +63,10 @@ def run_with_mutant(instance_id, mutant_path):
 def check_mutant(instance_id, mutant_path):
     output, meta = run_with_mutant(instance_id, mutant_path)
 
-    # Wenn der Mutant nicht mal sauber angewendet werden konnte (z.B. weil
-    # er dieselbe Zeile anders veraendert und "git apply" deshalb scheitert),
-    # ist das kein Testsuite-Versagen, sondern ein ungueltiger Mutant.
-    if "error: patch failed" in output or "error: while searching for" in output or "error: corrupt patch" in output:
+    # Wenn der Marker TRUVENT_APPLY_OK fehlt, ist das Patchen fehlgeschlagen --
+    # egal mit welcher Fehlermeldung. Robuster als nach bekannten Fehler-
+    # texten zu suchen, die je nach git-Version/Fehlerart variieren koennen.
+    if "TRUVENT_APPLY_OK" not in output:
         return "MUTANT_UNGUELTIG", output
 
     actual = parse_results(output, meta)
