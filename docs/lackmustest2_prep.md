@@ -24,22 +24,22 @@ Nicht der spätere Idealkunde aus `CLAUDE.md` Abschnitt 7 (Compliance-getrieben,
 Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkretes Pilot-Angebot, nicht in der Kaltnachricht (würde die Antwortquote killen, bevor Vertrauen da ist).
 
 ### Für Arcium (persönlicher Kontakt) — Deutsch
-> Hey [Name], ich arbeite gerade an etwas, das dich interessieren könnte: Ich teste, wie zuverlässig KI-Coding-Agenten (Claude Code, Cursor usw.) auf echtem Code wirklich sind — genauer: ob die Tests, die einen Fix als "korrekt" durchwinken, überhaupt streng genug sind. An 5 Beispielaufgaben hab ich das schon durchgezogen und echte Lücken gefunden (z. B. ein Fix, der eine Sache korrekt löst, aber unbemerkt was anderes kaputt macht, das kein Test prüft). Setzt ihr bei Arcium KI-Agenten im Code ein? Falls ja, würde ich das gerne mal an ein paar echten Fällen von euch ausprobieren. Hast du 15 Min?
+> Hey [Name], ich arbeite gerade an etwas, das dich interessieren könnte: Ich teste, wie zuverlässig KI-Coding-Agenten (Claude Code, Cursor usw.) auf echtem Code wirklich sind — genauer: ob die Tests, die einen Fix als "korrekt" durchwinken, überhaupt streng genug sind. An 4 Beispielaufgaben hab ich das schon durchgezogen und echte Lücken gefunden (z. B. ein Fix, der eine Sache korrekt löst, aber unbemerkt was anderes kaputt macht, das kein Test prüft). Setzt ihr bei Arcium KI-Agenten im Code ein? Falls ja, würde ich das gerne mal an ein paar echten Fällen von euch ausprobieren. Hast du 15 Min?
 
 ### For Arcium (personal contact) — English
-> Hey [Name], I'm working on something that might interest you: I test how reliable AI coding agents (Claude Code, Cursor, etc.) actually are on real code — specifically, whether the tests that approve a fix as "correct" are actually strict enough. I've already run this on 5 example tasks and found real gaps (e.g. a fix that correctly solves one thing but silently breaks something else that no test catches). Does Arcium use AI agents in your codebase? If so, I'd love to try this on a few real cases from your repo. Got 15 min?
+> Hey [Name], I'm working on something that might interest you: I test how reliable AI coding agents (Claude Code, Cursor, etc.) actually are on real code — specifically, whether the tests that approve a fix as "correct" are actually strict enough. I've already run this on 4 example tasks and found real gaps (e.g. a fix that correctly solves one thing but silently breaks something else that no test catches). Does Arcium use AI agents in your codebase? If so, I'd love to try this on a few real cases from your repo. Got 15 min?
 
 ### Für Kaltakquise (kein persönlicher Kontakt) — Deutsch
-> Hi, kurze Frage: Setzt ihr bei [Firma] KI-Coding-Agenten produktiv ein? Ich baue ein Tool, das prüft, ob die Tests, die einen Agenten-Fix als "korrekt" bewerten, tatsächlich streng genug sind — oder ob sie auch einen plausiblen, aber falschen Fix durchwinken würden. An 5 Testaufgaben schon nachgewiesen (Code + Ergebnisse öffentlich). Würde das gerne an ein paar echten Fällen aus eurem Repo testen. Interesse an 15 Minuten?
+> Hi, kurze Frage: Setzt ihr bei [Firma] KI-Coding-Agenten produktiv ein? Ich baue ein Tool, das prüft, ob die Tests, die einen Agenten-Fix als "korrekt" bewerten, tatsächlich streng genug sind — oder ob sie auch einen plausiblen, aber falschen Fix durchwinken würden. An 4 Testaufgaben schon nachgewiesen (Code + Ergebnisse öffentlich). Würde das gerne an ein paar echten Fällen aus eurem Repo testen. Interesse an 15 Minuten?
 
 ### For cold outreach (no personal contact) — English
-> Hi, quick question: does [Company] use AI coding agents in production? I'm building a tool that checks whether the tests approving an agent's fix as "correct" are actually strict enough — or whether they'd wave through a plausible-but-wrong fix too. Already demonstrated on 5 example tasks (code + results public). Would like to try this on a few real cases from your repo. Up for 15 minutes?
+> Hi, quick question: does [Company] use AI coding agents in production? I'm building a tool that checks whether the tests approving an agent's fix as "correct" are actually strict enough — or whether they'd wave through a plausible-but-wrong fix too. Already demonstrated on 4 example tasks (code + results public). Would like to try this on a few real cases from your repo. Up for 15 minutes?
 
 ## 3. Das Pilot-Angebot
 
 **Wichtig — Reihenfolge der Formulierung:** Nicht mit dem Aufwand für den Kunden anfangen ("schickt uns eure alten Bugs"), sondern mit dem **Ergebnis, das sie bekommen**. Die alten, gelösten Aufgaben sind nur das Rohmaterial, das wir technisch brauchen — nicht der Wert für sie. Der Wert:
 
-1. **Ein Härtetest ihrer eigenen Testsuite, unabhängig von jedem Agenten:** Würden ihre eigenen Tests auch einen plausiblen, aber falschen Fix durchwinken? (Bei unseren 5 öffentlichen Beispielen: 3 von 10.)
+1. **Ein Härtetest ihrer eigenen Testsuite, unabhängig von jedem Agenten:** Würden ihre eigenen Tests auch einen plausiblen, aber falschen Fix durchwinken? (Bei unseren 4 öffentlichen Beispielen: 2 von 8.)
 2. **Live-Agenten-Performance auf ihrem eigenen Code**, nicht auf einem generischen Leaderboard, das nichts über ihre Codebasis aussagt (optional, falls gewünscht).
 3. **Ein wiederverwendbares Ergebnis:** 5–10 fertige, deterministische Prüfaufgaben aus ihrem eigenen Repo, die sie später erneut gegen neue Modelle laufen lassen können.
 
@@ -49,7 +49,7 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 
 1. 5–10 echte, bereits gelöste Aufgaben aus dem eigenen Repo des Kunden erhalten
 2. Daraus deterministische Eval-Tasks bauen — exakt das Phase-0-Muster, nur auf ihrem statt einem öffentlichen Repo
-3. QS-Gauntlet drauf (Leak-Scan + Mutationstesting) — zeigt, ob ihre eigene Testsuite dieselben Lücken hat wie die heute gefundenen (requests/pylint/sympy)
+3. QS-Gauntlet drauf (Leak-Scan + Mutationstesting) — zeigt, ob ihre eigene Testsuite dieselben Lücken hat wie die heute gefundenen (requests/sympy)
 4. Optional: ein echter Coding-Agent läuft gegen ein paar dieser Aufgaben — wie gut löst er *ihren* Code wirklich?
 5. Ein Bericht am Ende (Stil wie die Phase-0-Berichte): X Aufgaben zuverlässig, Y mit gefundenen Testlücken, Agenten-Performance falls getestet
 
@@ -65,7 +65,7 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 "Wir prüfen, ob ein KI-Coding-Agent ein Problem *wirklich* gelöst hat — oder ob eure eigenen Tests nur zu schwach sind, um den Unterschied zu merken."
 
 **2. Was wir bisher bewiesen haben (konkret, nachprüfbar):**
-"An 5 öffentlichen Beispielaufgaben: unsere Prüfmethode liefert bei zehn Wiederholungen zehnmal exakt dasselbe Ergebnis — und mit gezielten falschen Lösungsversuchen haben wir 3 echte Lücken in deren Testsuiten gefunden, die ein normaler Blick nicht gesehen hätte. Alles öffentlich auf GitHub."
+"An 4 öffentlichen Beispielaufgaben: unsere Prüfmethode liefert bei zehn Wiederholungen zehnmal exakt dasselbe Ergebnis — und mit gezielten falschen Lösungsversuchen haben wir 2 echte Lücken in deren Testsuiten gefunden, die ein normaler Blick nicht gesehen hätte. Alles öffentlich auf GitHub."
 
 **3. Warum das relevant ist:**
 "82% der Firmen hatten laut einer aktuellen Studie in den letzten 6 Monaten einen Produktionsausfall durch KI-generierten Code. Das Problem ist nicht nur 'schreibt der Agent guten Code', sondern 'merkt ihr überhaupt, wenn er es nicht tut'."
@@ -99,6 +99,6 @@ Bewusst **ohne Preisnennung** — der Preis kommt erst im Gespräch als konkrete
 
 ## Referenzmaterial zum Zeigen
 
-- Code + Git-Historie: `github.com/louisklaff-cell/Truvent` (privat, Zugriff bei Bedarf gewähren)
+- Code + Git-Historie: `github.com/louisklaff-cell/Truvent` (privat, Zugriff bei Bedarf gewähren) — **enthält absichtlich nur 4 Aufgaben** (django/requests/pytest/sympy, BSD/MIT/Apache-lizenziert). Die fünfte, GPL-2.0-lizenzierte pylint-Aufgabe wurde am 20.07.2026 per `git-filter-repo` komplett aus der Historie entfernt (Lizenzvorsicht bei kommerzieller Nutzung, siehe `CLAUDE.md`) — bleibt nur intern auf der eigenen Festplatte, nie kundenbezogen verwenden.
 - Bericht Deutsch: https://claude.ai/code/artifact/95465702-56f3-4a18-a85e-65e8502d1085
 - Bericht Englisch: https://claude.ai/code/artifact/ff432e0c-9aa2-4015-b796-32ce282531ac
