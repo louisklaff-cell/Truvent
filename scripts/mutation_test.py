@@ -29,6 +29,7 @@ from run_once import (
     parse_results,
     render_inner_cmd,
     run_docker_with_cleanup,
+    touched_files,
 )
 
 TASKS_DIR = Path(__file__).parent.parent / "tasks"
@@ -43,20 +44,6 @@ def run_with_mutant(instance_id, mutant_path):
         tmp_path = Path(tmp)
         shutil.copy(real_task_dir / "test.patch", tmp_path / "test.patch")
         shutil.copy(mutant_path, tmp_path / "gold.patch")
-
-        # Vor jedem Docker-Lauf pruefen, statt manipulierte/verbotene
-        # Inhalte ueberhaupt erst auszufuehren. Faellt automatisch in
-        # check_mutant()s bestehende "TRUVENT_APPLY_OK fehlt" -> MUTANT_UNGUELTIG
-        # Logik, da dieser Text den Marker nie enthaelt. exempt = Dateien,
-        # die der ECHTE Gold-Patch dieser Aufgabe selbst beruehrt (z.B.
-        # setup.cfg bei pylint) -- ein Mutant/Agenten-Patch darf, was der
-        # bekannte echte Fix auch darf, aber nichts darueber hinaus.
-        real_gold_files = _files_from_patch(real_task_dir / "gold.patch")
-        forbidden = forbidden_infra_files(
-            _files_from_patch(tmp_path / "gold.patch"), exempt=real_gold_files
-        )
-        if forbidden:
-            return f"TRUVENT_FORBIDDEN_FILES: Kandidaten-Patch beruehrt Test-Infrastruktur: {forbidden}", meta
 
         test_file = _test_file_from_patch(tmp_path)
         restore_files = _files_from_patch(tmp_path / "test.patch")
@@ -101,6 +88,22 @@ def check_mutant(instance_id, mutant_path):
     # texten zu suchen, die je nach git-Version/Fehlerart variieren koennen.
     if "TRUVENT_APPLY_OK" not in output:
         return "MUTANT_UNGUELTIG", output
+
+    # Sperrlisten-Pruefung auf Dateisystem-Wahrheit (touched_files()), NICHT
+    # auf dem rohen Diff-Text von gold.patch -- siehe forbidden_infra_files()-
+    # Kommentar in run_once.py fuer den Grund (Diff-Format-Umgehungen eines
+    # unabhaengigen Audits, 21.07.2026). Fehlen die Marker trotz vorhandenem
+    # TRUVENT_APPLY_OK (sollte nicht passieren, da beide im selben "&&"-
+    # Befehlsstrang stehen), sicherheitshalber ablehnen statt anzunehmen,
+    # es sei nichts Verbotenes dabei.
+    touched = touched_files(output)
+    if touched is None:
+        return "MUTANT_UNGUELTIG", "TRUVENT_APPLY_OK vorhanden, aber Datei-Marker fehlen -- sicherheitshalber abgelehnt"
+
+    real_gold_files = _files_from_patch(TASKS_DIR / instance_id / "gold.patch")
+    forbidden = forbidden_infra_files(touched, exempt=real_gold_files)
+    if forbidden:
+        return "FORBIDDEN_FILES", f"Kandidaten-Patch beruehrt Test-Infrastruktur: {forbidden}"
 
     actual = parse_results(output, meta)
 

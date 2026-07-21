@@ -115,6 +115,16 @@ def _files_from_patch(patch_path):
 # (Manipulation direkt in einer legitim editierbaren Quelldatei) -- dafuer
 # gibt es keinen kleinen Fix, siehe Claude-Memory
 # truvent-oracle-isolation-research und CLAUDE.md.
+#
+# WICHTIG: diese Pruefung wird auf die TATSAECHLICH veraenderten Dateien
+# angewendet (siehe touched_files()), NICHT mehr auf den rohen Diff-Text
+# von gold.patch. Ein unabhaengiger Audit-Agent (21.07.2026) zeigte
+# empirisch, dass die urspruengliche, auf _files_from_patch() (dem
+# "diff --git a/... b/..."-Header) basierende Pruefung sich mit einem
+# kopflosen Unified-Diff (kein "diff --git"-Header -- git apply akzeptiert
+# das trotzdem) oder einer Umbenennung (nur die ALTE Seite des Headers
+# wurde erkannt) umgehen liess -- eine neue conftest.py schluepfte so
+# unbemerkt durch die Sperrliste und faelschte den Verdikt (FALSE_ACCEPT).
 _FORBIDDEN_INFRA_PATTERNS = [
     re.compile(r"(^|/)conftest\.py$"),
     re.compile(r"(^|/)pytest\.ini$"),
@@ -125,6 +135,32 @@ _FORBIDDEN_INFRA_PATTERNS = [
     re.compile(r"(^|/)usercustomize\.py$"),
     re.compile(r"\.pth$"),
 ]
+
+
+def _parse_git_status_porcelain(text):
+    """Porcelain-v1-Zeilenformat: 'XY PFAD' oder bei Umbenennungen
+    'XY ALT -> NEU' (die ersten 3 Zeichen sind Statuscode + Leerzeichen)."""
+    files = []
+    for line in text.splitlines():
+        if len(line) < 4:
+            continue
+        rest = line[3:]
+        if " -> " in rest:
+            rest = rest.split(" -> ", 1)[1]
+        files.append(rest.strip())
+    return files
+
+
+def touched_files(output):
+    """Extrahiert die Liste der vom Kandidaten-Patch (gold.patch) TATSAECHLICH
+    veraenderten/neu angelegten Dateien aus der `git status --porcelain`-
+    Ausgabe zwischen den _TOUCHED_FILES_*-Markern (siehe _APPLY_PATCHES).
+    Gibt None zurueck, wenn die Marker fehlen -- z.B. weil schon das
+    Anwenden von gold.patch scheiterte, bevor git status je lief."""
+    if _TOUCHED_FILES_START not in output or _TOUCHED_FILES_END not in output:
+        return None
+    section = output.split(_TOUCHED_FILES_START, 1)[1].split(_TOUCHED_FILES_END, 1)[0]
+    return _parse_git_status_porcelain(section)
 
 
 def forbidden_infra_files(candidate_files, exempt=()):
@@ -165,8 +201,20 @@ def _test_file_from_patch(task_dir):
 # ruehren gold.patch und test.patch ohnehin komplett unterschiedliche
 # Dateien an (gepr. Quellcode vs. Testdatei), git-apply-Kontextzeilen
 # haengen nicht von der Reihenfolge ab, wenn die Dateien disjunkt sind.
+# _TOUCHED_FILES_START/_END umschliessen die `git status --porcelain`-
+# Ausgabe UNMITTELBAR nach dem Anwenden von gold.patch (dem Kandidaten) --
+# das ist die Dateisystem-WAHRHEIT darueber, was der Kandidat tatsaechlich
+# veraendert/angelegt hat, unabhaengig vom Diff-Format (siehe
+# forbidden_infra_files()-Kommentar oben). Wird fuer JEDEN Lauf mit
+# eingebettet (auch run_once() fuer den vertrauenswuerdigen Gold-Patch) --
+# ein paar zusaetzliche Zeilen Ausgabe, aber einheitliche Logik statt
+# zwei verschiedene Codepfade.
+_TOUCHED_FILES_START = "TRUVENT_TOUCHED_FILES_START"
+_TOUCHED_FILES_END = "TRUVENT_TOUCHED_FILES_END"
 _APPLY_PATCHES = (
-    "cd /testbed && git apply /patches/gold.patch && {restore_cmd} && "
+    "cd /testbed && git apply /patches/gold.patch && "
+    f"echo {_TOUCHED_FILES_START} && git status --porcelain && echo {_TOUCHED_FILES_END} && "
+    "{restore_cmd} && "
     "git apply /patches/test.patch && echo TRUVENT_APPLY_OK"
 )
 _ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed"
@@ -398,8 +446,23 @@ def run_docker_with_cleanup(docker_cmd, timeout=300):
     docker_cmd = docker_cmd[:-1] + [capped_inner_cmd]
     full_cmd = docker_cmd[:3] + ["--name", container_name] + HARDENING_FLAGS + docker_cmd[3:]
     try:
-        result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
-        output = result.stdout + result.stderr
+        # text=False + explizites Decodieren mit errors="replace" statt
+        # subprocess.run(text=True) (strenges UTF-8, wirft bei ungueltigen
+        # Bytes eine unabgefangene UnicodeDecodeError): der Byte-Deckel
+        # oben (head -c) kann ein Mehrbyte-UTF-8-Zeichen genau am Schnitt
+        # zerteilen, UND ein boesartiger Kandidaten-Patch kann absichtlich
+        # ungueltige Bytes ausgeben -- beides fuehrte vorher zu einem
+        # Absturz, der einen ganzen Batch (check_determinism/
+        # reverify_agent_patches/run_agent_harness) abbrechen konnte.
+        # errors="replace" ist deterministisch (dieselben Bytes -> dieselben
+        # U+FFFD-Ersetzungen) und unschaedlich, weil alle geparsten
+        # Ergebniszeilen ohnehin reines ASCII sind. Fund eines unabhaengigen
+        # Audits, 21.07.2026.
+        result = subprocess.run(full_cmd, capture_output=True, timeout=timeout)
+        output = (
+            result.stdout.decode("utf-8", errors="replace")
+            + result.stderr.decode("utf-8", errors="replace")
+        )
         if len(output.encode("utf-8", errors="ignore")) >= _MAX_OUTPUT_BYTES:
             return (
                 f"TRUVENT_OUTPUT_OVERFLOW: Ausgabe erreichte den Deckel von "
