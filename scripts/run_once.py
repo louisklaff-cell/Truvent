@@ -180,7 +180,7 @@ def touched_files(output, nonce):
     vorhandener Muell (__pycache__/*.pyc, *.egg-info/, die bei JEDER
     Aufgabe vorkommen) faelschlich als "vom Kandidaten beruehrt" gilt --
     nur was NEU zwischen den beiden Aufnahmen erscheint, zaehlt."""
-    baseline_start, baseline_end, touched_start, touched_end, _ = _marker_strings(nonce)
+    baseline_start, baseline_end, touched_start, touched_end, _, _ = _marker_strings(nonce)
     markers = (baseline_start, baseline_end, touched_start, touched_end)
     if not all(m in output for m in markers):
         return None
@@ -262,6 +262,7 @@ def _marker_strings(nonce):
         f"TRUVENT_TOUCHED_FILES_START_{nonce}",
         f"TRUVENT_TOUCHED_FILES_END_{nonce}",
         f"TRUVENT_APPLY_OK_{nonce}",
+        f"TRUVENT_EXIT_CODE_{nonce}",
     )
 
 
@@ -283,7 +284,7 @@ def _apply_patches_cmd(nonce):
     WERT nicht mehr als Platzhalter erkannt (Python formatiert eingesetzte
     Werte nicht rekursiv) -- deshalb bewusst nur String-Verkettung hier,
     kein .format()."""
-    baseline_start, baseline_end, touched_start, touched_end, apply_ok = _marker_strings(nonce)
+    baseline_start, baseline_end, touched_start, touched_end, apply_ok, _ = _marker_strings(nonce)
     return (
         "cd /testbed && "
         f"echo {baseline_start} && {_STATUS_CMD} && echo {baseline_end} && "
@@ -341,6 +342,106 @@ def canary_violation(actual, repo):
             return f"Kanarienvogel '{suffix}' sollte bestehen, war aber {status!r}"
         if expected_status == "not_ok" and status == "ok":
             return f"Kanarienvogel '{suffix}' sollte fehlschlagen, war aber 'ok'"
+    return None
+
+
+# Zusammenfassungs-Gegenpruefung (Fund eines unabhaengigen Audits,
+# 22.07.2026): bisher wurde AUSSCHLIESSLICH zeilenweise per Regex
+# geparst (DJANGO_RESULT_LINE/PYTEST_RESULT_LINE/SYMPY_RESULT_LINE).
+# Verifizierter Angriff: ein Kandidaten-Patch druckt gefaelschte
+# "bestanden"-Zeilen fuer ALLE erwarteten Tests aus einer legitim
+# editierbaren Quelldatei und stuerzt DANACH ab (z.B. eine unbehandelte
+# Exception beim Modulimport), BEVOR auch nur ein echter Test lief --
+# funktionierte bei django UND sympy (kein Kanarienvogel-Schutz dort),
+# weil django/sympys eigene Testrunner (anders als pytest) keine
+# Ausgabe-Erfassung auf Dateideskriptor-Ebene machen, die gefaelschte
+# print()-Aufrufe automatisch verschlucken wuerde. Diese Pruefung ist
+# GENERELL (nicht nur fuer django/sympy) und laeuft zusaetzlich zur
+# zeilenweisen Erfassung: sie fragt den TESTRUNNER SELBST nach seiner
+# eigenen, abschliessenden Zusammenfassung (django: "Ran N tests",
+# sympy: "tests finished: ...", pytest: die "=== ... in Xs ==="-Zeile)
+# und vergleicht die dort gemeldete Testanzahl mit der erwarteten.
+# Ein Absturz VOR den echten Tests hinterlaesst zwangslaeufig KEINE
+# oder eine zu kleine Zusammenfassung -- unabhaengig davon, wie viele
+# gefaelschte Einzelzeilen zuvor gedruckt wurden.
+_DJANGO_SUMMARY = re.compile(r"Ran (\d+) tests? in [\d.]+s")
+_SYMPY_SUMMARY = re.compile(r"tests finished: (.+?), in [\d.]+ seconds")
+_PYTEST_SUMMARY_LINE = re.compile(r"^=+ (.+?) in [\d.]+s =+\s*$", re.MULTILINE)
+_COUNT_TOKEN = re.compile(r"(\d+)\s+(passed|failed|error|errors|skipped|xfailed|xpassed)\b", re.IGNORECASE)
+
+
+def _sum_count_tokens(text):
+    return sum(int(n) for n, _ in _COUNT_TOKEN.findall(text))
+
+
+def summary_violation(output, meta, expected_count):
+    """expected_count: die Anzahl Tests, die der Testrunner mindestens
+    (sympy) bzw. genau (django, pytest) selbst als abgeschlossen melden
+    MUSS. Gibt bei Verletzung eine kurze Beschreibung zurueck, sonst None.
+
+    sympy ist bewusst eine "mindestens"-Pruefung, keine exakte: `bin/test`
+    laeuft immer ueber die GANZE Testdatei, nicht nur die erwarteten
+    Tests (siehe _sympy_parse()-Kommentar -- z.B. 7 statt 5 bei
+    sympy__sympy-11618) -- das ist ein bekannter, legitimer Unterschied,
+    kein Angriff. Django und pytest bekommen explizite Testnamen als
+    Kommandozeilen-Argumente, dort MUSS die Anzahl exakt passen."""
+    repo = meta["repo"]
+    if repo == "django/django":
+        matches = _DJANGO_SUMMARY.findall(output)
+        if not matches:
+            return "Django-Zusammenfassung ('Ran N tests') fehlt in der Ausgabe"
+        reported = int(matches[-1])
+        if reported != expected_count:
+            return f"Django meldete {reported} abgeschlossene Tests, erwartet wurden {expected_count}"
+        return None
+    if repo == "sympy/sympy":
+        m = _SYMPY_SUMMARY.search(output)
+        if not m:
+            return "sympy-Zusammenfassung ('tests finished: ...') fehlt in der Ausgabe"
+        reported = _sum_count_tokens(m.group(1))
+        if reported < expected_count:
+            return f"sympy meldete nur {reported} abgeschlossene Tests, erwartet wurden mindestens {expected_count}"
+        return None
+    # pytest-basierte Repos (psf/requests, pylint-dev/pylint, pytest-dev/pytest)
+    matches = _PYTEST_SUMMARY_LINE.findall(output)
+    if not matches:
+        return "pytest-Zusammenfassungszeile fehlt in der Ausgabe"
+    reported = _sum_count_tokens(matches[-1])
+    if reported != expected_count:
+        return f"pytest meldete {reported} abgeschlossene Tests, erwartet wurden {expected_count}"
+    return None
+
+
+def expected_total_count(meta, repo=None):
+    """Erwartete Gesamtzahl fuer summary_violation(): die eigentlichen
+    Test-Labels plus die 4 Kanarienvogel-Tests, falls das Repo einen
+    Kanarienvogel mitfuehrt."""
+    repo = repo or meta["repo"]
+    total = len(expected_labels(meta))
+    if repo in _CANARY_SUPPORTED_REPOS:
+        total += len(_CANARY_EXPECTED_SUFFIXES)
+    return total
+
+
+def exit_code_violation(output, nonce):
+    """Extrahiert den per Nonce-Marker erfassten Exit-Code des Test-
+    Befehls (siehe render_inner_cmd()). Gibt eine kurze Beschreibung
+    zurueck, wenn der Marker fehlt (Lauf sicherheitshalber ablehnen --
+    sollte bei vorhandenem TRUVENT_APPLY_OK nie passieren, da beide im
+    selben Befehlsstrang stehen) oder ein exotischer Exit-Code
+    vorliegt, sonst None. 0 (alle Tests bestanden) und 1 (mind. ein
+    Test schlug ECHT fehl -- der normale, erwartete Zustand fuer
+    Mutanten) sind beide gueltig; alles andere (Crash, Interrupt,
+    Segfault, ...) ist verdaechtig genug, um den Lauf NICHT als
+    vertrauenswuerdiges Ergebnis zu werten -- unabhaengig davon, was
+    die zeilenweise geparsten Ergebnisse behaupten."""
+    marker = _marker_strings(nonce)[5]
+    m = re.search(re.escape(marker) + r":(\d+)", output)
+    if not m:
+        return "Exit-Code-Marker fehlt in der Ausgabe"
+    code = int(m.group(1))
+    if code not in (0, 1):
+        return f"unerwarteter Exit-Code {code} (0=alle bestanden, 1=mind. ein echter Fehlschlag erwartet)"
     return None
 
 
@@ -537,11 +638,36 @@ def render_inner_cmd(meta, labels, test_file, restore_files, nonce):
         restore_cmd = per_file
     else:
         restore_cmd = "true"
+    # Exit-Code-Erfassung (Fund eines unabhaengigen Audits, 22.07.2026):
+    # der Container-Exit-Code wurde bisher NIRGENDS geprueft. Ein
+    # abgestuerzter Testlauf (z.B. eine unbehandelte Exception waehrend
+    # des Modul-Imports, VOR jedem echten Test) war auf Prozessebene
+    # nicht von einem erfolgreichen Lauf zu unterscheiden -- genau das
+    # ermoeglichte den unten dokumentierten Angriff (gefaelschte
+    # Ergebniszeilen ausdrucken, dann abstuerzen, bevor die echten Tests
+    # je liefen). `;` statt `&&` vor dem echo, damit der Marker IMMER
+    # geschrieben wird, auch wenn der Testbefehl mit einem Fehlercode
+    # endet (Tests, die ECHT fehlschlagen, sind ein normaler, erwarteter
+    # Zustand -- kein Grund, die Kette abzubrechen).
+    #
+    # WICHTIG: test_cmd + echo MUSS in runde Klammern -- ohne sie hat
+    # `;` in bash eine NIEDRIGERE Prioritaet als `&&`, sodass
+    # "A && B && C; echo $?" als "(A && B && C); echo $?" geparst wird:
+    # das echo liefe dann IMMER, auch wenn schon A (z.B. git apply)
+    # fehlschlaegt -- und $? wuerde dann A's Exit-Code zeigen, nicht den
+    # von C (dem eigentlichen Testbefehl). Mit Klammern ist
+    # "( C; echo $? )" ein eigener Block, der nur laeuft, wenn A && B
+    # vorher erfolgreich waren, und $? bezieht sich darin korrekt auf C.
+    # Selbst empirisch beim ersten Testlauf dieses Fixes gefunden (ein
+    # fehlgeschlagener Patch-Versuch zeigte einen Exit-Code-Marker, der
+    # gar nicht haette erscheinen duerfen).
+    exit_code_marker = _marker_strings(nonce)[5]
+    test_cmd_with_exit_capture = f"( {config['test_cmd']}; echo {exit_code_marker}:$? )"
     # _apply_patches_cmd(nonce) enthaelt noch das unaufgeloeste
     # "{restore_cmd}" -- wird HIER, zusammen mit labels/test_file, in
     # einem einzigen .format()-Aufruf auf der VOLLSTAENDIGEN Befehlskette
     # ersetzt (nicht vorher separat), siehe _apply_patches_cmd()-Docstring.
-    full_template = f"{_apply_patches_cmd(nonce)} && {_ACTIVATE} && {config['test_cmd']}"
+    full_template = f"{_apply_patches_cmd(nonce)} && {_ACTIVATE} && {test_cmd_with_exit_capture}"
     return full_template.format(
         labels=quoted_labels, test_file=quoted_test_file, restore_cmd=restore_cmd
     )
@@ -702,17 +828,27 @@ def run_once(instance_id):
     ]
 
     output = run_docker_with_cleanup(docker_cmd, timeout=300)
-    return output, meta
+    return output, meta, nonce
 
 
 def check(instance_id):
-    output, meta = run_once(instance_id)
+    output, meta, nonce = run_once(instance_id)
     expected = expected_labels(meta)
     actual = parse_results(output, meta)
 
     violation = canary_violation(actual, meta["repo"])
     if violation:
         print(f"{instance_id}: KANARIENVOGEL VERLETZT -- {violation}")
+        return False
+
+    ec_violation = exit_code_violation(output, nonce)
+    if ec_violation:
+        print(f"{instance_id}: EXIT-CODE VERLETZT -- {ec_violation}")
+        return False
+
+    summary_v = summary_violation(output, meta, expected_total_count(meta))
+    if summary_v:
+        print(f"{instance_id}: ZUSAMMENFASSUNG VERLETZT -- {summary_v}")
         return False
 
     missing = [l for l in expected if l not in actual]

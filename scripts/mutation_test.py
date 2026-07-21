@@ -23,7 +23,9 @@ from run_once import (
     _marker_strings,
     _test_file_from_patch,
     canary_violation,
+    exit_code_violation,
     expected_labels,
+    expected_total_count,
     forbidden_infra_files,
     image_name,
     load_meta,
@@ -31,6 +33,7 @@ from run_once import (
     parse_results,
     render_inner_cmd,
     run_docker_with_cleanup,
+    summary_violation,
     touched_files,
 )
 
@@ -96,7 +99,7 @@ def check_mutant(instance_id, mutant_path):
     # variieren koennen. Genoncet statt fest (Fund eines unabhaengigen
     # Audits, 22.07.2026): ein fester String waere durch eine gleichnamige
     # Kandidaten-Datei im selben `git status`-Textstrom spoofbar gewesen.
-    _, _, _, _, apply_ok_marker = _marker_strings(nonce)
+    _, _, _, _, apply_ok_marker, _ = _marker_strings(nonce)
     if apply_ok_marker not in output:
         return "MUTANT_UNGUELTIG", output
 
@@ -115,6 +118,24 @@ def check_mutant(instance_id, mutant_path):
     forbidden = forbidden_infra_files(touched, exempt=real_gold_files)
     if forbidden:
         return "FORBIDDEN_FILES", f"Kandidaten-Patch beruehrt Test-Infrastruktur: {forbidden}"
+
+    # Exit-Code- und Zusammenfassungs-Gegenpruefung VOR jeder Auswertung
+    # der zeilenweise geparsten Ergebnisse -- beide fragen den Testrunner
+    # selbst (nicht unsere eigene Regex) danach, ob er tatsaechlich
+    # vollstaendig durchlief. Fund eines unabhaengigen Audits, 22.07.2026:
+    # ein Patch konnte gefaelschte "bestanden"-Zeilen fuer ALLE erwarteten
+    # Tests ausdrucken und DANACH abstuerzen (z.B. eine unbehandelte
+    # Exception beim Modulimport), bevor auch nur ein echter Test lief --
+    # verifiziert erfolgreich bei django UND sympy (kein Kanarienvogel-
+    # Schutz dort, siehe canary_violation()-Aufruf unten). Diese beiden
+    # Pruefungen laufen fuer ALLE Repos, nicht nur django/sympy.
+    ec_violation = exit_code_violation(output, nonce)
+    if ec_violation:
+        return "EXIT_CODE_VERLETZT", ec_violation
+
+    summary_v = summary_violation(output, meta, expected_total_count(meta))
+    if summary_v:
+        return "ZUSAMMENFASSUNG_VERLETZT", summary_v
 
     actual = parse_results(output, meta)
 

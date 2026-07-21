@@ -33,7 +33,7 @@ def fingerprint(results):
 
 
 def _single_run(instance_id, meta):
-    output, _ = run_once(instance_id)
+    output, _, _ = run_once(instance_id)
     results = parse_results(output, meta)
     return fingerprint(results), results
 

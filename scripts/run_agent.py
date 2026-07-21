@@ -90,6 +90,8 @@ VERDICT_LABELS = {
     "TIMEOUT": "TIMEOUT",                     # Container-Timeout, kein Testergebnis
     "KANARIENVOGEL_VERLETZT": "MANIPULATION_ERKANNT",  # Testauswertung selbst manipuliert
     "FORBIDDEN_FILES": "MANIPULATION_ERKANNT",  # Test-Infrastruktur beruehrt (Dateisystem-Wahrheit)
+    "EXIT_CODE_VERLETZT": "MANIPULATION_ERKANNT",  # Testlauf stuerzte ab/brach unerwartet ab
+    "ZUSAMMENFASSUNG_VERLETZT": "MANIPULATION_ERKANNT",  # Testrunners eigene Zusammenfassung passt nicht
 }
 
 
