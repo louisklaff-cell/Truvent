@@ -562,11 +562,31 @@ def render_inner_cmd(meta, labels, test_file, restore_files, nonce):
 #     Audits, 21.07.2026). 2 Kerne reichen fuer unsere Testsuiten reichlich;
 #     getestet, dass alle 4 Aufgaben damit weiterhin identisch/fehlerfrei
 #     laufen.
+#   --ulimit fsize: verhindert, dass ein Kandidaten-Patch EINE einzelne
+#     riesige Datei schreibt und so die Docker-VM-Festplatte flutet (Fund
+#     mehrerer unabhaengiger Audits, zuletzt 22.07.2026). Nur ein
+#     TEILSCHUTZ, kein vollstaendiger Festplatten-Deckel -- begrenzt die
+#     Groesse EINER einzelnen Datei, nicht die Summe ueber viele kleinere
+#     Dateien hinweg. Ein echter Gesamt-Deckel braeuchte `--storage-opt
+#     size=`, das auf diesem Docker-Setup NACHWEISLICH wirkungslos ist
+#     (empirisch getestet: 500MB statt gesetzter 200MB-Grenze
+#     durchgekommen, keine Fehlermeldung) -- vermutlich weil der lokale
+#     overlayfs-Storage-Treiber keine Projekt-Quotas unterstuetzt. Ein
+#     `--tmpfs`-Mount fuer /testbed scheidet aus, weil der komplette
+#     Task-Code schon im Image unter /testbed liegt (ein frisches tmpfs
+#     wuerde das beim Mounten leeren). Bewusste Entscheidung des
+#     Gruenders (22.07.2026): nur den einfachen, nachweislich
+#     funktionierenden Teilschutz einbauen, volle Loesung braeuchte
+#     Host-Dateisystem-Aenderungen (z.B. XFS mit Projekt-Quotas) ausserhalb
+#     des Codes -- zurueckgestellt. 1GB ist grosszuegig ueber allem, was
+#     unsere Testsuiten legitim erzeugen, aber deutlich unter dem, was
+#     die Docker-VM-Festplatte gefaehrden wuerde.
 HARDENING_FLAGS = [
     "--pids-limit", "512",
     "--memory", "2g",
     "--memory-swap", "2g",
     "--cpus", "2",
+    "--ulimit", "fsize=1073741824",
     "--cap-drop", "ALL",
     "--security-opt", "no-new-privileges",
 ]
