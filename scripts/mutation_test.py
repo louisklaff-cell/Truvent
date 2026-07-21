@@ -20,12 +20,14 @@ from run_once import (
     _CANARY_MOUNT_PATH,
     _CANARY_SUPPORTED_REPOS,
     _files_from_patch,
+    _marker_strings,
     _test_file_from_patch,
     canary_violation,
     expected_labels,
     forbidden_infra_files,
     image_name,
     load_meta,
+    new_nonce,
     parse_results,
     render_inner_cmd,
     run_docker_with_cleanup,
@@ -47,7 +49,12 @@ def run_with_mutant(instance_id, mutant_path):
 
         test_file = _test_file_from_patch(tmp_path)
         restore_files = _files_from_patch(tmp_path / "test.patch")
-        inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files)
+        # Nonce pro Aufruf frisch erzeugt (nicht vorhersagbar fuer den
+        # Kandidaten-Patch, der ja bereits VOR diesem Aufruf geschrieben
+        # wurde) -- wird unten an check_mutant() zurueckgegeben, damit es
+        # dieselben genoncten Marker beim Parsen der Ausgabe verwendet.
+        nonce = new_nonce()
+        inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files, nonce)
 
         docker_cmd = [
             "docker", "run", "--rm",
@@ -70,11 +77,11 @@ def run_with_mutant(instance_id, mutant_path):
             "bash", "-c", inner_cmd,
         ]
         output = run_docker_with_cleanup(docker_cmd, timeout=300)
-        return output, meta
+        return output, meta, nonce
 
 
 def check_mutant(instance_id, mutant_path):
-    output, meta = run_with_mutant(instance_id, mutant_path)
+    output, meta, nonce = run_with_mutant(instance_id, mutant_path)
 
     # Timeout ist ein eigener Zustand -- weder "Patch ungueltig" noch ein
     # Testergebnis. Getrennt behandeln statt faelschlich als UNGUELTIG
@@ -83,10 +90,14 @@ def check_mutant(instance_id, mutant_path):
     if output.startswith("TRUVENT_TIMEOUT"):
         return "TIMEOUT", output
 
-    # Wenn der Marker TRUVENT_APPLY_OK fehlt, ist das Patchen fehlgeschlagen --
-    # egal mit welcher Fehlermeldung. Robuster als nach bekannten Fehler-
-    # texten zu suchen, die je nach git-Version/Fehlerart variieren koennen.
-    if "TRUVENT_APPLY_OK" not in output:
+    # Wenn der genoncte TRUVENT_APPLY_OK-Marker fehlt, ist das Patchen
+    # fehlgeschlagen -- egal mit welcher Fehlermeldung. Robuster als nach
+    # bekannten Fehlertexten zu suchen, die je nach git-Version/Fehlerart
+    # variieren koennen. Genoncet statt fest (Fund eines unabhaengigen
+    # Audits, 22.07.2026): ein fester String waere durch eine gleichnamige
+    # Kandidaten-Datei im selben `git status`-Textstrom spoofbar gewesen.
+    _, _, _, _, apply_ok_marker = _marker_strings(nonce)
+    if apply_ok_marker not in output:
         return "MUTANT_UNGUELTIG", output
 
     # Sperrlisten-Pruefung auf Dateisystem-Wahrheit (touched_files()), NICHT
@@ -96,7 +107,7 @@ def check_mutant(instance_id, mutant_path):
     # TRUVENT_APPLY_OK (sollte nicht passieren, da beide im selben "&&"-
     # Befehlsstrang stehen), sicherheitshalber ablehnen statt anzunehmen,
     # es sei nichts Verbotenes dabei.
-    touched = touched_files(output)
+    touched = touched_files(output, nonce)
     if touched is None:
         return "MUTANT_UNGUELTIG", "TRUVENT_APPLY_OK vorhanden, aber Datei-Marker fehlen -- sicherheitshalber abgelehnt"
 

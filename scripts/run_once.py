@@ -151,21 +151,26 @@ def _parse_git_status_porcelain(text):
     return files
 
 
-def touched_files(output):
+def touched_files(output, nonce):
     """Extrahiert die Liste der vom Kandidaten-Patch (gold.patch) TATSAECHLICH
     veraenderten/neu angelegten Dateien -- als VORHER/NACHHER-Differenz
     zweier `git status --porcelain --ignored --untracked-files=all`-
-    Aufnahmen (siehe _APPLY_PATCHES: einmal vor, einmal direkt nach dem
-    Anwenden von gold.patch). Gibt None zurueck, wenn eines der vier
+    Aufnahmen (siehe _apply_patches_cmd(): einmal vor, einmal direkt nach
+    dem Anwenden von gold.patch). Gibt None zurueck, wenn eines der vier
     Marker-Paare fehlt -- z.B. weil schon das Anwenden von gold.patch
     scheiterte, bevor die zweite Aufnahme je lief.
 
-    WICHTIG, zwei Gruende fuer --ignored und den Vorher/Nachher-Vergleich
-    statt einer einzigen Aufnahme (Fund eines unabhaengigen Audits,
-    21.07.2026): (1) `git status --porcelain` OHNE --ignored uebersieht
-    per .gitignore ignorierte Dateien komplett -- ein Kandidaten-Patch
-    konnte in EINEM Schritt .gitignore um "conftest.py" erweitern UND
-    eine bösartige conftest.py anlegen; pytest laedt eine
+    `nonce` MUSS derselbe (pro Aufruf zufaellig erzeugte) Wert sein, mit
+    dem _apply_patches_cmd() die Marker fuer GENAU DIESEN Container-Lauf
+    gebaut hat (siehe dort fuer den Grund: Marker-Injection-Fund eines
+    unabhaengigen Audits, 22.07.2026).
+
+    WICHTIG, zwei weitere Gruende fuer --ignored und den Vorher/Nachher-
+    Vergleich statt einer einzigen Aufnahme (Fund eines unabhaengigen
+    Audits, 21.07.2026): (1) `git status --porcelain` OHNE --ignored
+    uebersieht per .gitignore ignorierte Dateien komplett -- ein
+    Kandidaten-Patch konnte in EINEM Schritt .gitignore um "conftest.py"
+    erweitern UND eine bösartige conftest.py anlegen; pytest laedt eine
     Projektstamm-conftest.py trotzdem automatisch, unsere Pruefung sah
     sie aber nie. (2) --untracked-files=all verhindert, dass eine ganz
     NEUE Unterverzeichnis-Struktur zu einer einzigen kollabierten Zeile
@@ -175,14 +180,12 @@ def touched_files(output):
     vorhandener Muell (__pycache__/*.pyc, *.egg-info/, die bei JEDER
     Aufgabe vorkommen) faelschlich als "vom Kandidaten beruehrt" gilt --
     nur was NEU zwischen den beiden Aufnahmen erscheint, zaehlt."""
-    markers = (
-        _BASELINE_STATUS_START, _BASELINE_STATUS_END,
-        _TOUCHED_FILES_START, _TOUCHED_FILES_END,
-    )
+    baseline_start, baseline_end, touched_start, touched_end, _ = _marker_strings(nonce)
+    markers = (baseline_start, baseline_end, touched_start, touched_end)
     if not all(m in output for m in markers):
         return None
-    baseline_section = output.split(_BASELINE_STATUS_START, 1)[1].split(_BASELINE_STATUS_END, 1)[0]
-    after_section = output.split(_TOUCHED_FILES_START, 1)[1].split(_TOUCHED_FILES_END, 1)[0]
+    baseline_section = output.split(baseline_start, 1)[1].split(baseline_end, 1)[0]
+    after_section = output.split(touched_start, 1)[1].split(touched_end, 1)[0]
     baseline_lines = set(l for l in baseline_section.splitlines() if l.strip())
     after_lines = [l for l in after_section.splitlines() if l.strip()]
     new_lines = [l for l in after_lines if l not in baseline_lines]
@@ -235,22 +238,62 @@ def _test_file_from_patch(task_dir):
 # eingebettet (auch run_once() fuer den vertrauenswuerdigen Gold-Patch) --
 # ein paar zusaetzliche Zeilen Ausgabe, aber einheitliche Logik statt
 # zwei verschiedene Codepfade.
-_BASELINE_STATUS_START = "TRUVENT_BASELINE_STATUS_START"
-_BASELINE_STATUS_END = "TRUVENT_BASELINE_STATUS_END"
-_TOUCHED_FILES_START = "TRUVENT_TOUCHED_FILES_START"
-_TOUCHED_FILES_END = "TRUVENT_TOUCHED_FILES_END"
+#
+# KRITISCH, per NONCE statt fester Strings (Fund eines unabhaengigen
+# Audits, 22.07.2026): die Marker standen zuvor als FESTE, dem Angreifer
+# im Voraus bekannte Zeichenketten im selben Textstrom wie die vom
+# Kandidaten-Patch kontrollierten Dateinamen (aus `git status`). Ein
+# Kandidat konnte einfach eine Datei anlegen, die GENAU SO HEISST wie ein
+# Marker (z.B. "TRUVENT_TOUCHED_FILES_END") -- beim Heraustrennen des
+# Textes (`output.split(marker, 1)`) wurde dann am DATEINAMEN statt am
+# echten, spaeter echoten Marker geschnitten, die erkannte Dateiliste
+# wurde leer, und `forbidden_infra_files()` sah nichts mehr. Verifiziert:
+# eine bösartige conftest.py + diese eine leere Trick-Datei ergab einen
+# echten FALSE_ACCEPT trotz ungefixtem Bug. Fix: jeder Marker bekommt
+# einen pro Lauf FRISCH ZUFAELLIG erzeugten Anhang (`uuid.uuid4().hex`,
+# kryptografisch sicher via os.urandom) -- der Kandidaten-Patch wird
+# OFFLINE geschrieben, BEVOR der Nonce ueberhaupt existiert, kann also
+# unmoeglich eine passende Datei vorbereiten. Betrifft auch TRUVENT_APPLY_OK
+# (dieselbe Schwaeche, separat gefunden) -- deshalb ebenfalls genoncet.
+def _marker_strings(nonce):
+    return (
+        f"TRUVENT_BASELINE_STATUS_START_{nonce}",
+        f"TRUVENT_BASELINE_STATUS_END_{nonce}",
+        f"TRUVENT_TOUCHED_FILES_START_{nonce}",
+        f"TRUVENT_TOUCHED_FILES_END_{nonce}",
+        f"TRUVENT_APPLY_OK_{nonce}",
+    )
+
+
+def new_nonce():
+    return uuid.uuid4().hex
+
+
 # --ignored --untracked-files=all: siehe touched_files()-Docstring fuer
 # den Grund (sonst uebersehene .gitignore'te Dateien / kollabierte
 # Unterverzeichnisse).
 _STATUS_CMD = "git status --porcelain --ignored --untracked-files=all"
-_APPLY_PATCHES = (
-    "cd /testbed && "
-    f"echo {_BASELINE_STATUS_START} && {_STATUS_CMD} && echo {_BASELINE_STATUS_END} && "
-    "git apply /patches/gold.patch && "
-    f"echo {_TOUCHED_FILES_START} && {_STATUS_CMD} && echo {_TOUCHED_FILES_END} && "
-    "{restore_cmd} && "
-    "git apply /patches/test.patch && echo TRUVENT_APPLY_OK"
-)
+
+
+def _apply_patches_cmd(nonce):
+    """Enthaelt absichtlich noch das unaufgeloeste "{restore_cmd}" --
+    wird zusammen mit labels/test_file in EINEM finalen .format()-Aufruf
+    in render_inner_cmd() ersetzt. Wuerde restore_cmd HIER schon per
+    .format() eingesetzt, wuerden literale geschweifte Klammern in seinem
+    WERT nicht mehr als Platzhalter erkannt (Python formatiert eingesetzte
+    Werte nicht rekursiv) -- deshalb bewusst nur String-Verkettung hier,
+    kein .format()."""
+    baseline_start, baseline_end, touched_start, touched_end, apply_ok = _marker_strings(nonce)
+    return (
+        "cd /testbed && "
+        f"echo {baseline_start} && {_STATUS_CMD} && echo {baseline_end} && "
+        "git apply /patches/gold.patch && "
+        f"echo {touched_start} && {_STATUS_CMD} && echo {touched_end} && "
+        "{restore_cmd} && "
+        f"git apply /patches/test.patch && echo {apply_ok}"
+    )
+
+
 _ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed"
 
 # Kanarienvogel: feste, immer mitgefuehrte Zusatztests (scripts/
@@ -345,29 +388,31 @@ def _pytest_cmd(repo):
         f"{{labels}} {_CANARY_MOUNT_PATH} -v"
     )
 
+# "test_cmd" ist NUR der Teil NACH _apply_patches_cmd()+_ACTIVATE -- der
+# volle Befehl wird erst in render_inner_cmd() pro Aufruf zusammengebaut,
+# weil _apply_patches_cmd() jetzt einen pro Lauf FRISCHEN Nonce braucht
+# (siehe _marker_strings()-Kommentar) und deshalb nicht mehr einmalig
+# beim Modul-Laden fest eingebacken werden kann.
 REPO_CONFIGS = {
     "django/django": {
         "labels": _django_labels,
         "parse": _django_parse,
-        "inner_cmd": (
-            f"{_APPLY_PATCHES} && {_ACTIVATE} && "
-            "python tests/runtests.py --settings=test_sqlite --parallel 1 -v 2 {labels}"
-        ),
+        "test_cmd": "python tests/runtests.py --settings=test_sqlite --parallel 1 -v 2 {labels}",
     },
     "psf/requests": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_pytest_cmd('psf/requests')}",
+        "test_cmd": _pytest_cmd("psf/requests"),
     },
     "pylint-dev/pylint": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_pytest_cmd('pylint-dev/pylint')}",
+        "test_cmd": _pytest_cmd("pylint-dev/pylint"),
     },
     "pytest-dev/pytest": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_pytest_cmd('pytest-dev/pytest')}",
+        "test_cmd": _pytest_cmd("pytest-dev/pytest"),
     },
     "sympy/sympy": {
         "labels": _sympy_labels,
@@ -375,7 +420,7 @@ REPO_CONFIGS = {
         # --no-subprocess: bin/test startet sonst einen Subprozess, der
         # Hash-Randomisierung wieder aktivieren kann -- widerspricht unserem
         # PYTHONHASHSEED=0-Pin.
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && python bin/test --no-subprocess -v {{test_file}}",
+        "test_cmd": "python bin/test --no-subprocess -v {test_file}",
     },
 }
 
@@ -430,7 +475,7 @@ def parse_results(output, meta):
     return REPO_CONFIGS[meta["repo"]]["parse"](output, expected)
 
 
-def render_inner_cmd(meta, labels, test_file, restore_files):
+def render_inner_cmd(meta, labels, test_file, restore_files, nonce):
     """Baut den Shell-Befehl aus repo-spezifischem Template + Testnamen/
     Dateipfad zusammen -- mit shlex.quote() pro Wert, nicht durch simple
     String-Interpolation. Testnamen und Dateipfad stammen aus test.patch/
@@ -440,6 +485,10 @@ def render_inner_cmd(meta, labels, test_file, restore_files):
     ohne Escaping waere das eine Command-Injection-Luecke innerhalb des
     Containers (durch --network none zwar eingedaemmt, aber trotzdem ein
     echtes Risiko, kein hypothetisches).
+
+    nonce: pro Aufruf frisch erzeugter Zufallswert (siehe new_nonce()),
+    macht die _apply_patches_cmd()-Marker fuer den Kandidaten-Patch nicht
+    vorhersagbar (siehe dortiger Kommentar).
 
     restore_files: die Dateien, die test.patch aendert -- werden nach dem
     Kandidaten-Patch per `git checkout --` zurueckgesetzt (siehe
@@ -472,7 +521,12 @@ def render_inner_cmd(meta, labels, test_file, restore_files):
         restore_cmd = per_file
     else:
         restore_cmd = "true"
-    return config["inner_cmd"].format(
+    # _apply_patches_cmd(nonce) enthaelt noch das unaufgeloeste
+    # "{restore_cmd}" -- wird HIER, zusammen mit labels/test_file, in
+    # einem einzigen .format()-Aufruf auf der VOLLSTAENDIGEN Befehlskette
+    # ersetzt (nicht vorher separat), siehe _apply_patches_cmd()-Docstring.
+    full_template = f"{_apply_patches_cmd(nonce)} && {_ACTIVATE} && {config['test_cmd']}"
+    return full_template.format(
         labels=quoted_labels, test_file=quoted_test_file, restore_cmd=restore_cmd
     )
 
@@ -572,8 +626,11 @@ def run_once(instance_id):
     # ECHTEN, vertrauenswuerdigen Gold-Patch dieser Aufgabe selbst -- die
     # Sperrliste (forbidden_infra_files) schuetzt gegen MUTANTEN/Agenten-
     # Patches in mutation_test.py, wo der Kandidat nicht vertrauenswuerdig
-    # ist.
-    inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files)
+    # ist. Der Nonce wird trotzdem gebraucht, weil _apply_patches_cmd()
+    # jetzt immer einen verlangt -- touched_files()/TRUVENT_APPLY_OK
+    # werden hier aber nicht ausgewertet.
+    nonce = new_nonce()
+    inner_cmd = render_inner_cmd(meta, labels, test_file, restore_files, nonce)
 
     docker_cmd = [
         "docker", "run", "--rm",
