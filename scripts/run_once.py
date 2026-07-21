@@ -153,14 +153,40 @@ def _parse_git_status_porcelain(text):
 
 def touched_files(output):
     """Extrahiert die Liste der vom Kandidaten-Patch (gold.patch) TATSAECHLICH
-    veraenderten/neu angelegten Dateien aus der `git status --porcelain`-
-    Ausgabe zwischen den _TOUCHED_FILES_*-Markern (siehe _APPLY_PATCHES).
-    Gibt None zurueck, wenn die Marker fehlen -- z.B. weil schon das
-    Anwenden von gold.patch scheiterte, bevor git status je lief."""
-    if _TOUCHED_FILES_START not in output or _TOUCHED_FILES_END not in output:
+    veraenderten/neu angelegten Dateien -- als VORHER/NACHHER-Differenz
+    zweier `git status --porcelain --ignored --untracked-files=all`-
+    Aufnahmen (siehe _APPLY_PATCHES: einmal vor, einmal direkt nach dem
+    Anwenden von gold.patch). Gibt None zurueck, wenn eines der vier
+    Marker-Paare fehlt -- z.B. weil schon das Anwenden von gold.patch
+    scheiterte, bevor die zweite Aufnahme je lief.
+
+    WICHTIG, zwei Gruende fuer --ignored und den Vorher/Nachher-Vergleich
+    statt einer einzigen Aufnahme (Fund eines unabhaengigen Audits,
+    21.07.2026): (1) `git status --porcelain` OHNE --ignored uebersieht
+    per .gitignore ignorierte Dateien komplett -- ein Kandidaten-Patch
+    konnte in EINEM Schritt .gitignore um "conftest.py" erweitern UND
+    eine bösartige conftest.py anlegen; pytest laedt eine
+    Projektstamm-conftest.py trotzdem automatisch, unsere Pruefung sah
+    sie aber nie. (2) --untracked-files=all verhindert, dass eine ganz
+    NEUE Unterverzeichnis-Struktur zu einer einzigen kollabierten Zeile
+    ("neuerordner/" statt der einzelnen Dateien darin) zusammengefasst
+    wird. Der Vorher/Nachher-Vergleich (statt einfach --ignored auf eine
+    einzelne Aufnahme draufzusetzen) verhindert, dass bereits im Image
+    vorhandener Muell (__pycache__/*.pyc, *.egg-info/, die bei JEDER
+    Aufgabe vorkommen) faelschlich als "vom Kandidaten beruehrt" gilt --
+    nur was NEU zwischen den beiden Aufnahmen erscheint, zaehlt."""
+    markers = (
+        _BASELINE_STATUS_START, _BASELINE_STATUS_END,
+        _TOUCHED_FILES_START, _TOUCHED_FILES_END,
+    )
+    if not all(m in output for m in markers):
         return None
-    section = output.split(_TOUCHED_FILES_START, 1)[1].split(_TOUCHED_FILES_END, 1)[0]
-    return _parse_git_status_porcelain(section)
+    baseline_section = output.split(_BASELINE_STATUS_START, 1)[1].split(_BASELINE_STATUS_END, 1)[0]
+    after_section = output.split(_TOUCHED_FILES_START, 1)[1].split(_TOUCHED_FILES_END, 1)[0]
+    baseline_lines = set(l for l in baseline_section.splitlines() if l.strip())
+    after_lines = [l for l in after_section.splitlines() if l.strip()]
+    new_lines = [l for l in after_lines if l not in baseline_lines]
+    return _parse_git_status_porcelain("\n".join(new_lines))
 
 
 def forbidden_infra_files(candidate_files, exempt=()):
@@ -209,11 +235,19 @@ def _test_file_from_patch(task_dir):
 # eingebettet (auch run_once() fuer den vertrauenswuerdigen Gold-Patch) --
 # ein paar zusaetzliche Zeilen Ausgabe, aber einheitliche Logik statt
 # zwei verschiedene Codepfade.
+_BASELINE_STATUS_START = "TRUVENT_BASELINE_STATUS_START"
+_BASELINE_STATUS_END = "TRUVENT_BASELINE_STATUS_END"
 _TOUCHED_FILES_START = "TRUVENT_TOUCHED_FILES_START"
 _TOUCHED_FILES_END = "TRUVENT_TOUCHED_FILES_END"
+# --ignored --untracked-files=all: siehe touched_files()-Docstring fuer
+# den Grund (sonst uebersehene .gitignore'te Dateien / kollabierte
+# Unterverzeichnisse).
+_STATUS_CMD = "git status --porcelain --ignored --untracked-files=all"
 _APPLY_PATCHES = (
-    "cd /testbed && git apply /patches/gold.patch && "
-    f"echo {_TOUCHED_FILES_START} && git status --porcelain && echo {_TOUCHED_FILES_END} && "
+    "cd /testbed && "
+    f"echo {_BASELINE_STATUS_START} && {_STATUS_CMD} && echo {_BASELINE_STATUS_END} && "
+    "git apply /patches/gold.patch && "
+    f"echo {_TOUCHED_FILES_START} && {_STATUS_CMD} && echo {_TOUCHED_FILES_END} && "
     "{restore_cmd} && "
     "git apply /patches/test.patch && echo TRUVENT_APPLY_OK"
 )
@@ -273,10 +307,43 @@ def canary_violation(actual, repo):
 # wuerden wir uns nur darauf verlassen, dass kein Repo das tut. Sicher
 # auch wenn die Plugins gar nicht installiert sind (pytest ignoriert
 # "no:X" fuer nicht registrierte Plugins).
-_PYTEST_CMD = (
-    f"pytest -p no:randomly -p no:xdist -p no:cacheprovider "
-    f"{{labels}} {_CANARY_MOUNT_PATH} -v"
-)
+#
+# -o addopts=<TRUSTED_WERT>: ueberschreibt die "addopts"-Zeile aus
+# setup.cfg/pytest.ini/pyproject.toml mit einem FEST HINTERLEGTEN,
+# vertrauenswuerdigen Wert -- NIEMALS mit dem, was aktuell in der
+# (moeglicherweise vom Kandidaten veraenderten) Datei steht. Grund (Fund
+# eines unabhaengigen Audits, 21.07.2026): setup.cfg/pyproject.toml/
+# tox.ini stehen zwar auf der Sperrliste (forbidden_infra_files), aber
+# die AUSNAHME fuer Dateien, die der ECHTE Gold-Patch legitim beruehrt
+# (z.B. pylints echter Fix aendert setup.cfg), oeffnet einen Seitenkanal:
+# ein Kandidat darf setup.cfg aendern und dort per
+# `addopts = -p evilplugin` ein beliebiges neues Python-Modul als
+# pytest-Plugin registrieren -- das neue Modul selbst (z.B. evilplugin.py)
+# steht auf KEINER Sperrliste (waere sonst zu restriktiv fuer legitime
+# neue Hilfsdateien eines Agenten-Fixes). Das Plugin kann dann gezielt
+# nur das eine bekannte Testergebnis faelschen (Kanarienvogel sieht
+# nichts). Ein einfaches `-o addopts=` (LEER) haette pytest-dev/pytest
+# selbst kaputt gemacht -- diese Aufgabe braucht legitim `-p pytester`
+# aus ihrer eigenen pyproject.toml (das eigene "pytester"-Plugin, das
+# pytest zum Testen von SICH SELBST mitbringt). Deshalb: pro Repo der
+# TATSAECHLICHE, zum Zeitpunkt der Aufgaben-Erstellung geprueft-
+# vertrauenswuerdige Ausgangswert (siehe _TRUSTED_ADDOPTS), hart codiert,
+# NICHT zur Laufzeit aus der (potenziell manipulierten) Datei gelesen.
+# Verifiziert: ohne Fix FALSE_ACCEPT trotz ungefixtem Bug, mit Fix korrekt
+# abgelehnt, UND pytest-dev/pytest laeuft weiterhin fehlerfrei.
+_TRUSTED_ADDOPTS = {
+    "psf/requests": "",
+    "pylint-dev/pylint": '-m "not acceptance"',
+    "pytest-dev/pytest": "-rfEX -p pytester --strict-markers",
+}
+
+
+def _pytest_cmd(repo):
+    addopts_flag = shlex.quote(f"addopts={_TRUSTED_ADDOPTS.get(repo, '')}")
+    return (
+        f"pytest -o {addopts_flag} -p no:randomly -p no:xdist -p no:cacheprovider "
+        f"{{labels}} {_CANARY_MOUNT_PATH} -v"
+    )
 
 REPO_CONFIGS = {
     "django/django": {
@@ -290,17 +357,17 @@ REPO_CONFIGS = {
     "psf/requests": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_PYTEST_CMD}",
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_pytest_cmd('psf/requests')}",
     },
     "pylint-dev/pylint": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_PYTEST_CMD}",
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_pytest_cmd('pylint-dev/pylint')}",
     },
     "pytest-dev/pytest": {
         "labels": _pytest_labels,
         "parse": _pytest_parse,
-        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_PYTEST_CMD}",
+        "inner_cmd": f"{_APPLY_PATCHES} && {_ACTIVATE} && {_pytest_cmd('pytest-dev/pytest')}",
     },
     "sympy/sympy": {
         "labels": _sympy_labels,
@@ -378,12 +445,33 @@ def render_inner_cmd(meta, labels, test_file, restore_files):
     Kandidaten-Patch per `git checkout --` zurueckgesetzt (siehe
     _APPLY_PATCHES), damit ein Kandidaten-Patch die Testdatei nicht
     manipulieren kann. Leere Liste -> "true" (No-Op), statt ein
-    `git checkout --` ohne Pfade abzusetzen (das waere ein Fehler)."""
+    `git checkout --` ohne Pfade abzusetzen (das waere ein Fehler).
+
+    Pro Datei einzeln mit Fallback statt eines einzigen `git checkout --
+    f1 f2 f3`: falls test.patch eine NEUE Testdatei anlegt (die es im
+    base_commit noch nicht gibt), schlaegt `git checkout --` fuer genau
+    diese Datei fehl ("did not match any file(s)") und haette wegen der
+    "&&"-Verkettung die GESAMTE Kette abgebrochen -- ein gueltiger
+    Kandidaten-Patch waere faelschlich als MUTANT_UNGUELTIG gewertet
+    worden. Kein Sicherheitsloch (Fail-Richtung ist zu restriktiv, nicht
+    zu freizuegig), aber ein Korrektheitsfehler, der bei echten SWE-bench-
+    Aufgaben mit neu angelegten Testdateien (in Phase 1 haeufig) zuschlagen
+    wuerde -- unsere aktuellen 5 Aufgaben aendern alle nur bestehende
+    Testdateien, daher bisher nicht aufgefallen. Fund eines unabhaengigen
+    Audits, 21.07.2026. Fallback: existiert die Datei nicht im base_commit,
+    wird sie stattdessen geloescht (rm -f) -- test.patch legt sie danach
+    frisch an."""
     config = REPO_CONFIGS[meta["repo"]]
     quoted_labels = " ".join(shlex.quote(l) for l in labels)
     quoted_test_file = shlex.quote(test_file) if test_file else ""
-    quoted_restore = " ".join(shlex.quote(f) for f in restore_files)
-    restore_cmd = f"git checkout -- {quoted_restore}" if restore_files else "true"
+    if restore_files:
+        per_file = " && ".join(
+            f"( git checkout -- {shlex.quote(f)} 2>/dev/null || rm -f {shlex.quote(f)} )"
+            for f in restore_files
+        )
+        restore_cmd = per_file
+    else:
+        restore_cmd = "true"
     return config["inner_cmd"].format(
         labels=quoted_labels, test_file=quoted_test_file, restore_cmd=restore_cmd
     )
