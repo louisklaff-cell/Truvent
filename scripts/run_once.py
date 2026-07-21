@@ -637,11 +637,23 @@ def run_docker_with_cleanup(docker_cmd, timeout=300):
         # Ergebniszeilen ohnehin reines ASCII sind. Fund eines unabhaengigen
         # Audits, 21.07.2026.
         result = subprocess.run(full_cmd, capture_output=True, timeout=timeout)
+        # Ueberlauf-Pruefung auf den ROHEN Byte-Laengen, NICHT auf der
+        # bereits mit errors="replace" decodierten und danach neu
+        # kodierten Zeichenkette (Fund eines unabhaengigen Audits,
+        # 22.07.2026): jedes ungueltige Byte wird beim Decodieren zu
+        # U+FFFD (3 Bytes in UTF-8), ein erneutes .encode() danach
+        # zaehlt also mehr Bytes, als der Container tatsaechlich
+        # ausgegeben hat -- bei viel ungueltiger Ausgabe koennte der
+        # Deckel dadurch VERFRUEHT ausloesen (faelschlich als Ueberlauf
+        # gewertet). Fail-closed-Richtung (ungefaehrlich), aber
+        # ungenau. Die rohen Bytes VOR dem Decodieren sind die einzig
+        # korrekte Grundlage fuer den Vergleich mit _MAX_OUTPUT_BYTES.
+        raw_len = len(result.stdout) + len(result.stderr)
         output = (
             result.stdout.decode("utf-8", errors="replace")
             + result.stderr.decode("utf-8", errors="replace")
         )
-        if len(output.encode("utf-8", errors="ignore")) >= _MAX_OUTPUT_BYTES:
+        if raw_len >= _MAX_OUTPUT_BYTES:
             return (
                 f"TRUVENT_OUTPUT_OVERFLOW: Ausgabe erreichte den Deckel von "
                 f"{_MAX_OUTPUT_BYTES} Bytes, vermutlich abgeschnitten (Name: {container_name})"

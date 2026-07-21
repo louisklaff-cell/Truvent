@@ -5,6 +5,7 @@ Testfrage: verarbeitet unser Harness echten KI-Output ueberhaupt
 korrekt (nicht nur unsere eigenen sauberen Gold Patches/Mutanten)?
 """
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -34,9 +35,18 @@ def _files_from_gold_patch(instance_id):
 
 
 def _file_content_from_container(instance_id, filepath):
+    # --network none + shlex.quote(): dieser Container liest heute nur aus
+    # unserem eigenen, vertrauenswuerdigen gold.patch abgeleitete Pfade,
+    # aber jeder andere Container-Aufruf im Projekt haertet konsistent
+    # (--network none, shlex.quote) -- diese eine Ausnahme wurde von
+    # mehreren unabhaengigen Audits erneut bestaetigt. Sobald Kunden-
+    # oder Agenten-abgeleitete Dateipfade hier ankommen (Lackmustest 2+),
+    # waere ein praeparierter Pfad ohne diesen Fix eine Command-Injection-
+    # in-einem-netzwerkfaehigen-Container-Luecke. 22.07.2026.
     docker_cmd = [
         "docker", "run", "--rm", "--platform", "linux/amd64",
-        image_name(instance_id), "bash", "-c", f"cat -n /testbed/{filepath}",
+        "--network", "none",
+        image_name(instance_id), "bash", "-c", f"cat -n {shlex.quote('/testbed/' + filepath)}",
     ]
     return run_docker_with_cleanup(docker_cmd, timeout=60)
 
