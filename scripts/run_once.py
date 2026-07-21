@@ -491,14 +491,29 @@ def render_inner_cmd(meta, labels, test_file, restore_files, nonce):
     vorhersagbar (siehe dortiger Kommentar).
 
     restore_files: die Dateien, die test.patch aendert -- werden nach dem
-    Kandidaten-Patch per `git checkout --` zurueckgesetzt (siehe
-    _APPLY_PATCHES), damit ein Kandidaten-Patch die Testdatei nicht
-    manipulieren kann. Leere Liste -> "true" (No-Op), statt ein
+    Kandidaten-Patch per `git checkout <base_commit> --` zurueckgesetzt
+    (siehe _apply_patches_cmd()), damit ein Kandidaten-Patch die Testdatei
+    nicht manipulieren kann. Leere Liste -> "true" (No-Op), statt ein
     `git checkout --` ohne Pfade abzusetzen (das waere ein Fehler).
+
+    WICHTIG: explizit `git checkout meta["base_commit"] -- DATEI`, NICHT
+    das bare `git checkout -- DATEI` (das implizit von der INDEX-/HEAD-
+    Version restauriert, nicht zwingend von base_commit). Fund eines
+    unabhaengigen Audits (22.07.2026): meta.json fuehrt einen
+    `base_commit`-Wert, den zuvor KEIN Skript je auslas -- die Restore-
+    Logik verliess sich stillschweigend darauf, dass der Image-HEAD
+    inhaltlich mit base_commit uebereinstimmt (was fuer alle 5 aktuellen
+    Aufgaben zufaellig stimmt: SWE-bench haengt in der Regel noch einen
+    eigenen Scaffolding-Commit an, der aber bei unseren Aufgaben keine
+    Testdatei beruehrt). Ohne diesen Fix haette ein zukuenftiges Image
+    (oder eine Kunden-Umgebung), dessen HEAD von base_commit abweicht,
+    STILL die falsche Baseline wiederhergestellt -- ohne Fehlermeldung.
+    Jetzt ist base_commit die einzige Quelle der Wahrheit, unabhaengig
+    vom Ambient-Zustand des Images.
 
     Pro Datei einzeln mit Fallback statt eines einzigen `git checkout --
     f1 f2 f3`: falls test.patch eine NEUE Testdatei anlegt (die es im
-    base_commit noch nicht gibt), schlaegt `git checkout --` fuer genau
+    base_commit noch nicht gibt), schlaegt `git checkout` fuer genau
     diese Datei fehl ("did not match any file(s)") und haette wegen der
     "&&"-Verkettung die GESAMTE Kette abgebrochen -- ein gueltiger
     Kandidaten-Patch waere faelschlich als MUTANT_UNGUELTIG gewertet
@@ -513,9 +528,10 @@ def render_inner_cmd(meta, labels, test_file, restore_files, nonce):
     config = REPO_CONFIGS[meta["repo"]]
     quoted_labels = " ".join(shlex.quote(l) for l in labels)
     quoted_test_file = shlex.quote(test_file) if test_file else ""
+    quoted_base_commit = shlex.quote(meta["base_commit"])
     if restore_files:
         per_file = " && ".join(
-            f"( git checkout -- {shlex.quote(f)} 2>/dev/null || rm -f {shlex.quote(f)} )"
+            f"( git checkout {quoted_base_commit} -- {shlex.quote(f)} 2>/dev/null || rm -f {shlex.quote(f)} )"
             for f in restore_files
         )
         restore_cmd = per_file
